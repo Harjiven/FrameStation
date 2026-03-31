@@ -1,0 +1,30 @@
+# Build outputs
+**/build/
+
+# Log files
+*.log
+*-log.txt
+*-log2.txt
+*-log3.txt
+*-err.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Unity Library (if applicable)
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+
+# Gradle
+.gradle/
+local.properties
