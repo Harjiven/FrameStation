@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network security policy for FrameStationXR.
+
+    This app acts as a spatial browser and streaming client. The WebView must be
+    able to reach any site the user navigates to (HTTP or HTTPS), so cleartext is
+    permitted globally. Streaming/API code uses OkHttp with its own SSL trust
+    configuration and is unaffected by this policy.
+
+    Trust anchors include user-installed CAs to support:
+      - Plex media servers (plex.direct wildcard certs)
+      - Sunshine/Apollo self-signed HTTPS certs on LAN
+-->
 <network-security-config>
-    <!-- Default: only trust system CAs, no cleartext -->
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
+            <!-- User-installed CAs: Plex, Sunshine, or any custom LAN cert -->
+            <certificates src="user" />
         </trust-anchors>
     </base-config>
 </network-security-config>

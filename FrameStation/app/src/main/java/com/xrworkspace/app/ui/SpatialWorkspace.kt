@@ -32,8 +32,19 @@ import androidx.xr.compose.subspace.layout.height
 import androidx.xr.compose.subspace.layout.padding
 import androidx.xr.compose.subspace.layout.offset
 import androidx.xr.compose.subspace.layout.width
+import com.xrworkspace.app.model.AudioMode
+import com.xrworkspace.app.model.AudioSettings
 import com.xrworkspace.app.model.Bookmark
+import com.xrworkspace.app.model.HostConfig
+import com.xrworkspace.app.model.ServerApp
+import com.xrworkspace.app.model.StreamSettings
+import com.xrworkspace.app.streaming.DiscoveredHost
+import com.xrworkspace.app.ui.components.AboutDialog
+import com.xrworkspace.app.ui.components.AppSelectorPanel
 import com.xrworkspace.app.ui.components.BookmarkManagerPanel
+import com.xrworkspace.app.ui.components.DiscoveryPanel
+import com.xrworkspace.app.ui.components.HostManagerPanel
+import com.xrworkspace.app.ui.components.MonitorPickerPanel
 import com.xrworkspace.app.ui.components.PairingPanel
 import com.xrworkspace.app.ui.components.SettingsPanel
 import com.xrworkspace.app.ui.components.WorkspaceToolbar
@@ -41,6 +52,7 @@ import com.xrworkspace.app.ui.panels.BookmarkWebViewPanel
 import com.xrworkspace.app.ui.panels.DesktopStreamPanel
 import com.xrworkspace.app.ui.panels.NativeStreamPanel
 import com.xrworkspace.app.ui.panels.rememberStreamController
+import com.xrworkspace.app.viewmodel.WolState
 import com.xrworkspace.app.viewmodel.WorkspaceUiState
 import java.io.File
 import kotlinx.coroutines.launch
@@ -53,14 +65,37 @@ fun SpatialWorkspace(
     onAddBookmark: (String, String) -> Unit,
     onRemoveBookmark: (String) -> Unit,
     onToggleBookmarkManager: () -> Unit,
+    onUpdateBookmarkUa: (id: String, useDesktopUa: Boolean) -> Unit = { _, _ -> },
+    onOpenNewTab: () -> Unit = {},
     onUpdateStreamUrl: (String) -> Unit,
     onUpdateServerAddress: (String) -> Unit,
     onTogglePairing: () -> Unit,
     onStreamingStateChanged: (Boolean) -> Unit,
+    onToggleHostManager: () -> Unit = {},
+    onAddHost: (String, String) -> Unit = { _, _ -> },
+    onRemoveHost: (String) -> Unit = {},
+    onSelectHost: (String) -> Unit = {},
+    onUpdateAutoReconnect: (Boolean) -> Unit = {},
+    onToggleDiscovery: () -> Unit = {},
+    onStartDiscovery: () -> Unit = {},
+    onStopDiscovery: () -> Unit = {},
+    onSelectDiscoveredHost: (DiscoveredHost) -> Unit = {},
+    onUpdateStreamSettings: (StreamSettings) -> Unit = {},
+    onUpdateAudioSettings: (AudioSettings) -> Unit = {},
+    onUpdateMacAddress: (String) -> Unit = {},
+    onSendWakeOnLan: () -> Unit = {},
+    onToggleAppSelector: () -> Unit = {},
+    onFetchApps: () -> Unit = {},
+    onSelectApp: (ServerApp) -> Unit = {},
+    onToggleMonitorPicker: () -> Unit = {},
+    onFetchMonitors: () -> Unit = {},
+    onSelectMonitor: (com.xrworkspace.app.model.MonitorInfo) -> Unit = {},
+    onSunshineCredentialsChanged: (String, String) -> Unit = { _, _ -> },
     dataDir: File,
 ) {
     val animatedAlpha = remember { Animatable(0.5f) }
     val showSettings = remember { mutableStateOf(false) }
+    val showAbout = remember { mutableStateOf(false) }
     // Toggle between native Moonlight streaming and WebView fallback
     val useNativeStreaming = remember { mutableStateOf(true) }
     val streamController = rememberStreamController()
@@ -85,17 +120,45 @@ fun SpatialWorkspace(
             SpatialPanel(
                 modifier = SubspaceModifier
                     .width(500.dp)
-                    .height(350.dp)
+                    .height(700.dp)
                     .offset(z = 100.dp),
                 dragPolicy = MovePolicy(isEnabled = true),
             ) {
                 SettingsPanel(
                     currentServerAddress = uiState.serverAddress,
-                    onSave = { ip ->
+                    currentMacAddress = uiState.macAddress,
+                    currentStreamSettings = uiState.streamSettings,
+                    currentAudioSettings = uiState.audioSettings,
+                    currentAutoReconnect = uiState.autoReconnectEnabled,
+                    activeHost = uiState.hostConfigs.find { it.id == uiState.activeHostId },
+                    onSave = { ip, mac, streamSettings, audioSettings, autoReconnect ->
                         onUpdateServerAddress(ip)
+                        onUpdateMacAddress(mac)
+                        onUpdateStreamSettings(streamSettings)
+                        onUpdateAudioSettings(audioSettings)
+                        onUpdateAutoReconnect(autoReconnect)
                         showSettings.value = false
                     },
                     onDismiss = { showSettings.value = false },
+                    onShowAbout = { 
+                        showSettings.value = false
+                        showAbout.value = true
+                    },
+                )
+            }
+        }
+
+        // About dialog — separate SpatialPanel floating in front
+        if (showAbout.value) {
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .width(600.dp)
+                    .height(800.dp)
+                    .offset(z = 200.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
+            ) {
+                AboutDialog(
+                    onDismiss = { showAbout.value = false },
                 )
             }
         }
@@ -118,6 +181,7 @@ fun SpatialWorkspace(
                     },
                     onAddressChanged = { ip -> onUpdateServerAddress(ip) },
                     onDismiss = { onTogglePairing() },
+                    onScanNetwork = onToggleDiscovery,
                     dataDir = dataDir,
                 )
             }
@@ -133,12 +197,103 @@ fun SpatialWorkspace(
                 dragPolicy = MovePolicy(isEnabled = true),
             ) {
                 BookmarkManagerPanel(
-                    bookmarks = uiState.bookmarks,
+                    bookmarks = uiState.bookmarks.filter { !it.isEphemeral },
                     openBookmarkIds = uiState.openBookmarkIds,
                     onToggleBookmark = onToggleBookmark,
                     onAddBookmark = onAddBookmark,
                     onRemoveBookmark = onRemoveBookmark,
+                    onUpdateBookmarkUa = onUpdateBookmarkUa,
+                    onNewTab = onOpenNewTab,
                     onDismiss = onToggleBookmarkManager,
+                )
+            }
+        }
+
+        // Host manager popup — separate SpatialPanel floating in front
+        if (uiState.showHostManager) {
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .width(750.dp)
+                    .height(500.dp)
+                    .offset(z = 100.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
+            ) {
+                HostManagerPanel(
+                    hostConfigs = uiState.hostConfigs,
+                    activeHostId = uiState.activeHostId,
+                    onSelectHost = onSelectHost,
+                    onAddHost = onAddHost,
+                    onRemoveHost = onRemoveHost,
+                    onDismiss = onToggleHostManager,
+                )
+            }
+        }
+
+        // Discovery popup — separate SpatialPanel floating in front
+        if (uiState.showDiscovery) {
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .width(600.dp)
+                    .height(450.dp)
+                    .offset(z = 100.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
+            ) {
+                DiscoveryPanel(
+                    discoveredHosts = uiState.discoveredHosts,
+                    isScanning = uiState.isScanning,
+                    discoveryError = uiState.discoveryError,
+                    onSelectHost = onSelectDiscoveredHost,
+                    onStartScan = onStartDiscovery,
+                    onStopScan = onStopDiscovery,
+                    onRefresh = {
+                        onStopDiscovery()
+                        onStartDiscovery()
+                    },
+                    onDismiss = onToggleDiscovery,
+                )
+            }
+        }
+
+        // App selector popup — separate SpatialPanel floating in front
+        if (uiState.showAppSelector) {
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .width(600.dp)
+                    .height(500.dp)
+                    .offset(z = 100.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
+            ) {
+                AppSelectorPanel(
+                    apps = uiState.availableApps,
+                    selectedApp = uiState.selectedApp,
+                    isLoading = uiState.isLoadingApps,
+                    error = uiState.appListError,
+                    onSelectApp = onSelectApp,
+                    onRefresh = onFetchApps,
+                    onDismiss = onToggleAppSelector,
+                )
+            }
+        }
+
+        // Monitor picker popup — separate SpatialPanel floating in front
+        if (uiState.showMonitorPicker) {
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .width(560.dp)
+                    .height(520.dp)
+                    .offset(z = 100.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
+            ) {
+                MonitorPickerPanel(
+                    monitors = uiState.monitors,
+                    isLoading = uiState.isLoadingMonitors,
+                    error = uiState.monitorError,
+                    sunshineUsername = uiState.sunshineUsername,
+                    sunshinePassword = uiState.sunshinePassword,
+                    onCredentialsChanged = onSunshineCredentialsChanged,
+                    onFetchMonitors = onFetchMonitors,
+                    onSelectMonitor = onSelectMonitor,
+                    onDismiss = onToggleMonitorPicker,
                 )
             }
         }
@@ -157,6 +312,15 @@ fun SpatialWorkspace(
                     if (useNativeStreaming.value) {
                         NativeStreamPanel(
                             serverAddress = uiState.serverAddress,
+                            streamSettings = uiState.streamSettings,
+                            audioSettings = uiState.audioSettings,
+                            autoReconnectEnabled = uiState.autoReconnectEnabled,
+                            selectedAppId = uiState.selectedApp?.appId,
+                            selectedAppName = uiState.selectedApp?.appName ?: "Desktop",
+                            onAppSelectorClick = onToggleAppSelector,
+                            hasMacAddress = uiState.macAddress.isNotBlank(),
+                            wolState = uiState.wolState,
+                            onWakeClick = onSendWakeOnLan,
                             onStreamingStateChanged = onStreamingStateChanged,
                             streamController = streamController,
                         )
@@ -192,8 +356,26 @@ fun SpatialWorkspace(
                     onBookmarksClick = onToggleBookmarkManager,
                     onPairingClick = onTogglePairing,
                     onSettingsClick = { showSettings.value = true },
+                    onHostsClick = onToggleHostManager,
+                    onDiscoverClick = onToggleDiscovery,
+                    isDiscoveryActive = uiState.showDiscovery || uiState.isScanning,
+                    activeHostName = uiState.hostConfigs.find { it.id == uiState.activeHostId }?.name,
+                    hasMacAddress = uiState.macAddress.isNotBlank(),
+                    wolState = uiState.wolState,
+                    onWakeClick = onSendWakeOnLan,
+                    audioSettings = uiState.audioSettings,
+                    onToggleMute = {
+                        val current = uiState.audioSettings
+                        val toggled = if (current.audioMode == AudioMode.MUTED) {
+                            current.copy(audioMode = AudioMode.STREAM_AUDIO)
+                        } else {
+                            current.copy(audioMode = AudioMode.MUTED)
+                        }
+                        onUpdateAudioSettings(toggled)
+                    },
                     onStopStream = { streamController.stopStream() },
                     onShowKeyboard = { streamController.showKeyboard() },
+                    onSwitchMonitor = onToggleMonitorPicker,
                 )
             }
         }
@@ -209,7 +391,7 @@ fun SpatialWorkspace(
                     .width(500.dp)
                     .height(430.dp)
                     .offset(
-                        x = (750 + column * 520).dp,  // 750dp right of center + 520dp per additional column
+                        x = (980 + column * 520).dp,  // 980dp right of center (clears 1400dp main panel edge + gap) + 520dp per additional column
                         y = (if (row == 0) 220 else -220).dp, // top half or bottom half
                     ),
                 dragPolicy = MovePolicy(isEnabled = true),

@@ -29,6 +29,10 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 java {
@@ -61,4 +65,18 @@ dependencies {
     implementation(libs.androidx.concurrent.futures)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.material)
+
+    // jmDNS — needed at compile time because DiscoveryManager instantiates JmDNSDiscoveryAgent
+    // which extends javax.jmdns.ServiceListener (a transitive dep of moonlight-core)
+    implementation("org.jmdns:jmdns:3.5.9")
+
+    // OkHttp — for SunshineApiManager (Sunshine uses digest auth, needs OkHttp Authenticator)
+    // moonlight-core uses OkHttp transitively but as `implementation` (not `api`), so we
+    // must declare it directly here to use it in app-module source files.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Unit testing
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }

@@ -7,30 +7,91 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.xrworkspace.app.model.AudioSettings
+import com.xrworkspace.app.model.AudioSettingsManager
 import com.xrworkspace.app.model.Bookmark
 import com.xrworkspace.app.model.BookmarkManager
+import com.xrworkspace.app.model.HostConfig
+import com.xrworkspace.app.model.HostConfigManager
+import com.xrworkspace.app.model.MonitorInfo
+import com.xrworkspace.app.model.ServerApp
+import com.xrworkspace.app.model.StreamSettings
+import com.xrworkspace.app.model.StreamSettingsManager
+import com.xrworkspace.app.streaming.DiscoveredHost
+import com.xrworkspace.app.streaming.DiscoveryManager
+import com.xrworkspace.app.streaming.ServerManager
+import com.xrworkspace.app.streaming.SunshineApiManager
+import com.xrworkspace.app.streaming.WolManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * State of a Wake-on-LAN request lifecycle.
+ */
+enum class WolState {
+    /** No WoL action in progress. */
+    Idle,
+    /** Magic packet is being sent. */
+    Sending,
+    /** Magic packet was sent successfully (fire-and-forget). */
+    Sent,
+    /** Failed to send the magic packet. */
+    Failed,
+}
 
 data class WorkspaceUiState(
     val showDesktopPanel: Boolean = true,
     val desktopStreamUrl: String = "",
-    val serverAddress: String = "192.168.1.100",
+    val serverAddress: String = "192.168.1.100", // mirrors WorkspaceViewModel.DEFAULT_SERVER_ADDRESS
     val isPaired: Boolean = false,
     val showPairing: Boolean = false,
     val isStreaming: Boolean = false,
     val bookmarks: List<Bookmark> = emptyList(),
     val openBookmarkIds: Set<String> = emptySet(),
     val showBookmarkManager: Boolean = false,
+    val streamSettings: StreamSettings = StreamSettings(),
+    val hostConfigs: List<HostConfig> = emptyList(),
+    val activeHostId: String? = null,
+    val showHostManager: Boolean = false,
+    val discoveredHosts: List<DiscoveredHost> = emptyList(),
+    val isScanning: Boolean = false,
+    val showDiscovery: Boolean = false,
+    val discoveryError: String? = null,
+    val availableApps: List<ServerApp> = emptyList(),
+    val selectedApp: ServerApp? = null,
+    val showAppSelector: Boolean = false,
+    val isLoadingApps: Boolean = false,
+    val appListError: String? = null,
+    val autoReconnectEnabled: Boolean = true,
+    val audioSettings: AudioSettings = AudioSettings(),
+    val macAddress: String = "",
+    val wolState: WolState = WolState.Idle,
+    val wolError: String? = null,
+    // Monitor picker
+    val showMonitorPicker: Boolean = false,
+    val monitors: List<MonitorInfo> = emptyList(),
+    val isLoadingMonitors: Boolean = false,
+    val monitorError: String? = null,
+    val sunshineUsername: String = "",
+    val sunshinePassword: String = "",
 )
 
 class WorkspaceViewModel(application: Application) : AndroidViewModel(application) {
     private val sharedPreferences = application.getSharedPreferences("framestation_prefs", Context.MODE_PRIVATE)
-    private val defaultServerAddress = "192.168.1.100"
     private val bookmarkManager = BookmarkManager(sharedPreferences)
+    private val streamSettingsManager = StreamSettingsManager(sharedPreferences)
+    private val audioSettingsManager = AudioSettingsManager(sharedPreferences)
+    private val hostConfigManager = HostConfigManager(sharedPreferences)
 
+    private val discoveryManager = DiscoveryManager(application)
+    private val wolManager = WolManager()
     private val _uiState: MutableStateFlow<WorkspaceUiState>
 
     init {
@@ -38,20 +99,94 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         val savedOpenIds = sharedPreferences.getStringSet("open_bookmark_ids", emptySet()) ?: emptySet()
         // Only restore IDs that still exist in the bookmark list
         val validOpenIds = savedOpenIds.filter { id -> bookmarks.any { it.id == id } }.toSet()
+        val streamSettings = streamSettingsManager.loadStreamSettings()
+        val audioSettings = audioSettingsManager.loadAudioSettings()
+
+        // Migrate single-server config to multi-host on first run
+        var hostConfigs = hostConfigManager.loadHosts()
+        if (hostConfigs.isEmpty()) {
+            hostConfigs = hostConfigManager.migrateFromSingleServer()
+        }
+        val activeHostId = hostConfigManager.getActiveHostId()
+        val activeHost = hostConfigs.find { it.id == activeHostId }
+        val serverAddress = activeHost?.address
+            ?: sharedPreferences.getString("server_address", DEFAULT_SERVER_ADDRESS)
+            ?: DEFAULT_SERVER_ADDRESS
+
+        // Load MAC address: prefer active host config, fall back to standalone pref
+        val macAddress = activeHost?.macAddress
+            ?: sharedPreferences.getString("server_mac_address", "") ?: ""
+
+        val autoReconnect = sharedPreferences.getBoolean("auto_reconnect_enabled", true)
+        val sunshineUsername = sharedPreferences.getString("sunshine_username", "") ?: ""
+        val sunshinePassword = sharedPreferences.getString("sunshine_password", "") ?: ""
 
         _uiState = MutableStateFlow(
             WorkspaceUiState(
                 desktopStreamUrl = sharedPreferences.getString("desktop_stream_url", "") ?: "",
-                serverAddress = sharedPreferences.getString("server_address", defaultServerAddress) ?: defaultServerAddress,
+                serverAddress = serverAddress,
                 showDesktopPanel = sharedPreferences.getBoolean("layout_desktop", true),
                 bookmarks = bookmarks,
                 openBookmarkIds = validOpenIds,
+                streamSettings = streamSettings,
+                audioSettings = audioSettings,
+                hostConfigs = hostConfigs,
+                activeHostId = activeHostId,
+                macAddress = macAddress,
+                autoReconnectEnabled = autoReconnect,
+                sunshineUsername = sunshineUsername,
+                sunshinePassword = sunshinePassword,
             )
         )
 
         // Persist default bookmarks on first run
         if (sharedPreferences.getString("bookmarks_json", null) == null) {
             bookmarkManager.saveBookmarks(bookmarks)
+        }
+
+        // Collect discovery flows and mirror into UI state.
+        // Each collector is individually guarded: an exception in one must not
+        // silently kill the others or leave the ViewModel in a broken state.
+        viewModelScope.launch {
+            try {
+                discoveryManager.discoveredHosts.collect { hosts ->
+                    _uiState.update { it.copy(discoveredHosts = hosts) }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "discoveredHosts collector failed", e)
+            }
+        }
+        viewModelScope.launch {
+            try {
+                discoveryManager.isScanning.collect { scanning ->
+                    _uiState.update { it.copy(isScanning = scanning) }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "isScanning collector failed", e)
+            }
+        }
+        viewModelScope.launch {
+            try {
+                discoveryManager.discoveryError.collect { error ->
+                    _uiState.update { it.copy(discoveryError = error) }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "discoveryError collector failed", e)
+            }
+        }
+
+        // Auto-start discovery briefly on launch (10 seconds) to populate host list.
+        viewModelScope.launch {
+            try {
+                discoveryManager.startDiscovery()
+                delay(10_000L)
+                // Only stop if the user hasn't opened the discovery panel
+                if (!_uiState.value.showDiscovery) {
+                    discoveryManager.stopDiscovery()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Auto-discovery startup failed", e)
+            }
         }
     }
 
@@ -85,6 +220,26 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         bookmarkManager.saveBookmarks(_uiState.value.bookmarks)
     }
 
+    /**
+     * Open a new ephemeral browser tab. Ephemeral tabs appear as panels but are
+     * never saved to the bookmark list. They start on an empty page so the user
+     * can type a URL in the panel's URL bar.
+     */
+    fun openNewTab() {
+        val tab = Bookmark(
+            name = "New Tab",
+            url = "about:blank",
+            isEphemeral = true,
+        )
+        _uiState.update { state ->
+            state.copy(
+                bookmarks = state.bookmarks + tab,
+                openBookmarkIds = state.openBookmarkIds + tab.id,
+            )
+        }
+        // Do NOT save — ephemeral tab is filtered out by BookmarkManager
+    }
+
     fun removeBookmark(id: String) {
         _uiState.update { state ->
             state.copy(
@@ -94,6 +249,17 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         }
         bookmarkManager.saveBookmarks(_uiState.value.bookmarks)
         saveOpenBookmarks()
+    }
+
+    fun updateBookmarkUa(id: String, useDesktopUa: Boolean) {
+        _uiState.update { state ->
+            state.copy(
+                bookmarks = state.bookmarks.map {
+                    if (it.id == id) it.copy(useDesktopUa = useDesktopUa) else it
+                },
+            )
+        }
+        bookmarkManager.saveBookmarks(_uiState.value.bookmarks)
     }
 
     fun toggleBookmarkManager() {
@@ -118,13 +284,380 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(showPairing = !it.showPairing) }
     }
 
+    fun updateStreamSettings(settings: StreamSettings) {
+        _uiState.update { it.copy(streamSettings = settings) }
+        streamSettingsManager.saveStreamSettings(settings)
+    }
+
+    fun updateAudioSettings(settings: AudioSettings) {
+        _uiState.update { it.copy(audioSettings = settings) }
+        audioSettingsManager.saveAudioSettings(settings)
+    }
+
     fun setStreamingState(streaming: Boolean) {
         _uiState.update { it.copy(isStreaming = streaming) }
     }
 
+    fun updateAutoReconnect(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("auto_reconnect_enabled", enabled).apply()
+        _uiState.update { it.copy(autoReconnectEnabled = enabled) }
+    }
+
+    // --- App selector ---
+
+    fun toggleAppSelector() {
+        _uiState.update { it.copy(showAppSelector = !it.showAppSelector) }
+    }
+
+    /**
+     * Fetch the list of apps from the current server.
+     * Runs the network call on [Dispatchers.IO] and updates UI state.
+     */
+    fun fetchApps() {
+        val address = _uiState.value.serverAddress
+        if (address.isBlank()) return
+
+        _uiState.update { it.copy(isLoadingApps = true, appListError = null) }
+
+        viewModelScope.launch {
+            try {
+                val dataDir = getApplication<Application>().filesDir
+                val serverManager = ServerManager(dataDir, sharedPreferences)
+                val apps = withContext(Dispatchers.IO) {
+                    serverManager.getAppList(address).getOrThrow()
+                }
+                val savedAppId = sharedPreferences.getInt("selected_app_id", -1)
+                val restoredApp = apps.find { it.appId == savedAppId }
+                _uiState.update {
+                    it.copy(
+                        availableApps = apps,
+                        isLoadingApps = false,
+                        selectedApp = restoredApp
+                            ?: it.selectedApp?.let { sel -> apps.find { a -> a.appId == sel.appId } }
+                            ?: apps.find { a -> a.appName.equals("Desktop", ignoreCase = true) },
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("WorkspaceVM", "Failed to fetch app list", e)
+                _uiState.update {
+                    it.copy(
+                        isLoadingApps = false,
+                        appListError = e.message ?: "Failed to fetch apps",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Select an app to stream. Persists the choice in SharedPreferences.
+     */
+    fun selectApp(app: ServerApp) {
+        sharedPreferences.edit().putInt("selected_app_id", app.appId).apply()
+        _uiState.update { it.copy(selectedApp = app, showAppSelector = false) }
+    }
+
+    // --- Network discovery ---
+
+    fun startDiscovery() {
+        discoveryManager.startDiscovery()
+    }
+
+    fun stopDiscovery() {
+        discoveryManager.stopDiscovery()
+    }
+
+    fun toggleDiscoveryPanel() {
+        val willShow = !_uiState.value.showDiscovery
+        _uiState.update { it.copy(showDiscovery = willShow) }
+        if (willShow) {
+            discoveryManager.startDiscovery()
+        } else {
+            discoveryManager.stopDiscovery()
+        }
+    }
+
+    /**
+     * Select a discovered host — auto-fills the server address and opens the pairing panel.
+     */
+    fun selectDiscoveredHost(host: DiscoveredHost) {
+        updateServerAddress(host.address)
+        _uiState.update {
+            it.copy(
+                showDiscovery = false,
+                showPairing = true,
+            )
+        }
+        discoveryManager.stopDiscovery()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        discoveryManager.stopDiscovery()
+        // SunshineApiManager uses a per-call OkHttpClient with no persistent state;
+        // in-flight coroutines are cancelled automatically by viewModelScope teardown.
+    }
+
+    // --- Host config management ---
+
+    fun toggleHostManager() {
+        _uiState.update { it.copy(showHostManager = !it.showHostManager) }
+    }
+
+    fun addHost(name: String, address: String) {
+        val certFileName = hostConfigManager.certFileNameForHost(
+            java.util.UUID.randomUUID().toString()
+        )
+        val host = HostConfig(
+            name = name.ifBlank { address },
+            address = address,
+            certFileName = certFileName,
+        )
+        hostConfigManager.addHost(host)
+        val updatedHosts = hostConfigManager.loadHosts()
+        _uiState.update { state ->
+            // If this is the first host, make it active
+            val newActiveId = state.activeHostId ?: host.id
+            if (newActiveId == host.id) {
+                hostConfigManager.setActiveHostId(host.id)
+                sharedPreferences.edit().putString("server_address", host.address).apply()
+            }
+            state.copy(
+                hostConfigs = updatedHosts,
+                activeHostId = newActiveId,
+                serverAddress = if (newActiveId == host.id) host.address else state.serverAddress,
+            )
+        }
+    }
+
+    fun removeHost(id: String) {
+        hostConfigManager.removeHost(id)
+        val updatedHosts = hostConfigManager.loadHosts()
+        _uiState.update { state ->
+            val newActiveId = if (state.activeHostId == id) {
+                updatedHosts.firstOrNull()?.id
+            } else {
+                state.activeHostId
+            }
+            val newAddress = updatedHosts.find { it.id == newActiveId }?.address ?: DEFAULT_SERVER_ADDRESS
+            if (newActiveId != state.activeHostId) {
+                hostConfigManager.setActiveHostId(newActiveId)
+                sharedPreferences.edit().putString("server_address", newAddress).apply()
+            }
+            state.copy(
+                hostConfigs = updatedHosts,
+                activeHostId = newActiveId,
+                serverAddress = newAddress,
+            )
+        }
+    }
+
+    fun setActiveHost(id: String) {
+        hostConfigManager.setActiveHostId(id)
+        val host = hostConfigManager.loadHosts().find { it.id == id } ?: return
+        sharedPreferences.edit().putString("server_address", host.address).apply()
+        val mac = host.macAddress ?: ""
+        sharedPreferences.edit().putString("server_mac_address", mac).apply()
+        _uiState.update { state ->
+            state.copy(
+                activeHostId = id,
+                serverAddress = host.address,
+                macAddress = mac,
+            )
+        }
+    }
+
+    fun updateHost(host: HostConfig) {
+        hostConfigManager.updateHost(host)
+        val updatedHosts = hostConfigManager.loadHosts()
+        _uiState.update { state ->
+            val newAddress = if (state.activeHostId == host.id) {
+                sharedPreferences.edit().putString("server_address", host.address).apply()
+                host.address
+            } else {
+                state.serverAddress
+            }
+            state.copy(
+                hostConfigs = updatedHosts,
+                serverAddress = newAddress,
+            )
+        }
+    }
+
+    // --- Wake-on-LAN ---
+
+    /**
+     * Update the MAC address for the current server.
+     * Persists to both the standalone pref and the active host config (if any).
+     */
+    fun updateMacAddress(mac: String) {
+        sharedPreferences.edit().putString("server_mac_address", mac).apply()
+        _uiState.update { state ->
+            // Also persist MAC to the active host config if one exists
+            val updatedHostConfigs = state.hostConfigs.map { host ->
+                if (host.id == state.activeHostId) host.copy(macAddress = mac) else host
+            }
+            if (updatedHostConfigs != state.hostConfigs) {
+                hostConfigManager.saveHosts(updatedHostConfigs)
+            }
+            state.copy(macAddress = mac, hostConfigs = updatedHostConfigs)
+        }
+    }
+
+    /**
+     * Send a Wake-on-LAN magic packet to the current server.
+     * Transitions through [WolState] lifecycle: Idle → Sending → Sent/Failed.
+     * Automatically resets to Idle after a delay so the UI can show transient feedback.
+     */
+    fun sendWakeOnLan() {
+        val state = _uiState.value
+        val mac = state.macAddress
+        if (mac.isBlank() || !wolManager.isValidMacAddress(mac)) {
+            _uiState.update { it.copy(wolState = WolState.Failed, wolError = "Invalid MAC address") }
+            resetWolStateAfterDelay()
+            return
+        }
+
+        _uiState.update { it.copy(wolState = WolState.Sending, wolError = null) }
+
+        viewModelScope.launch {
+            val result = wolManager.sendWakePacket(
+                address = state.serverAddress,
+                macAddress = mac,
+            )
+            result.fold(
+                onSuccess = {
+                    Log.i("WorkspaceVM", "WoL packet sent to ${state.serverAddress} ($mac)")
+                    _uiState.update { it.copy(wolState = WolState.Sent, wolError = null) }
+                },
+                onFailure = { e ->
+                    Log.e("WorkspaceVM", "WoL failed: ${e.message}", e)
+                    _uiState.update { it.copy(wolState = WolState.Failed, wolError = e.message) }
+                },
+            )
+            resetWolStateAfterDelay()
+        }
+    }
+
+    /**
+     * Reset WoL state to Idle after a brief delay for UI feedback.
+     */
+    private fun resetWolStateAfterDelay() {
+        viewModelScope.launch {
+            delay(WOL_FEEDBACK_DURATION_MS)
+            _uiState.update { it.copy(wolState = WolState.Idle, wolError = null) }
+        }
+    }
+
     private fun saveOpenBookmarks() {
-        val ids = _uiState.value.openBookmarkIds
+        // Never persist ephemeral tab IDs — they are not in bookmarks after restart
+        val ids = _uiState.value.openBookmarkIds.filter { id ->
+            _uiState.value.bookmarks.any { it.id == id && !it.isEphemeral }
+        }.toSet()
         Log.i("WorkspaceVM", "Auto-saving open bookmarks: $ids")
         sharedPreferences.edit().putStringSet("open_bookmark_ids", ids).apply()
+    }
+
+    // -----------------------------------------------------------------------
+    // Monitor picker
+    // -----------------------------------------------------------------------
+
+    private val sunshineApiManager = SunshineApiManager()
+
+    fun toggleMonitorPicker() {
+        val showing = _uiState.value.showMonitorPicker
+        _uiState.update { it.copy(showMonitorPicker = !showing) }
+        if (!showing) {
+            // Auto-fetch monitors when opening the panel
+            fetchMonitors()
+        }
+    }
+
+    fun updateSunshineCredentials(username: String, password: String) {
+        _uiState.update { it.copy(sunshineUsername = username, sunshinePassword = password) }
+        sharedPreferences.edit()
+            .putString("sunshine_username", username)
+            .putString("sunshine_password", password)
+            .apply()
+    }
+
+    /**
+     * Fetch the list of displays from Sunshine's web API.
+     * Requires valid Sunshine admin credentials stored in [WorkspaceUiState].
+     */
+    fun fetchMonitors() {
+        val state = _uiState.value
+        val address = state.serverAddress
+        val username = state.sunshineUsername
+        val password = state.sunshinePassword
+
+        _uiState.update { it.copy(isLoadingMonitors = true, monitorError = null) }
+
+        viewModelScope.launch {
+            sunshineApiManager.fetchMonitors(address, username, password)
+                .onSuccess { monitors ->
+                    Log.i("WorkspaceVM", "Loaded ${monitors.size} monitors from $address")
+                    _uiState.update { it.copy(monitors = monitors, isLoadingMonitors = false) }
+                }
+                .onFailure { e ->
+                    Log.e("WorkspaceVM", "fetchMonitors failed: ${e.message}")
+                    _uiState.update {
+                        it.copy(
+                            isLoadingMonitors = false,
+                            monitorError = "Failed to load displays: ${e.message}",
+                        )
+                    }
+                }
+        }
+    }
+
+    /**
+     * Switch the active monitor on Sunshine by updating `output_name` via the web API.
+     * The change takes effect on the next stream session.
+     */
+    fun setActiveMonitor(monitor: MonitorInfo) {
+        val state = _uiState.value
+        _uiState.update { it.copy(isLoadingMonitors = true, monitorError = null) }
+
+        viewModelScope.launch {
+            sunshineApiManager.setActiveMonitor(
+                address = state.serverAddress,
+                username = state.sunshineUsername,
+                password = state.sunshinePassword,
+                systemName = monitor.systemName,
+            ).onSuccess {
+                Log.i("WorkspaceVM", "Switched to monitor ${monitor.displayName}")
+                // Update local list to reflect new active state
+                val updated = state.monitors.map { m ->
+                    m.copy(isActive = m.systemName == monitor.systemName)
+                }
+                _uiState.update {
+                    it.copy(
+                        monitors = updated,
+                        isLoadingMonitors = false,
+                        showMonitorPicker = false,
+                    )
+                }
+            }.onFailure { e ->
+                Log.e("WorkspaceVM", "setActiveMonitor failed: ${e.message}")
+                _uiState.update {
+                    it.copy(
+                        isLoadingMonitors = false,
+                        monitorError = "Failed to switch display: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "WorkspaceViewModel"
+        /** How long to show WoL feedback (Sent/Failed) before resetting to Idle. */
+        private const val WOL_FEEDBACK_DURATION_MS = 5000L
+        /**
+         * Fallback server address used when no host has been configured.
+         * Also surfaced in UI placeholders so users know the expected format.
+         */
+        const val DEFAULT_SERVER_ADDRESS = "192.168.1.100"
     }
 }

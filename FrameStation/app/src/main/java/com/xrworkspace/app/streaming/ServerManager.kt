@@ -8,6 +8,7 @@ import com.limelight.binding.PlatformBinding
 import com.limelight.nvstream.http.ComputerDetails
 import com.limelight.nvstream.http.NvHTTP
 import com.limelight.nvstream.http.PairingManager
+import com.xrworkspace.app.model.ServerApp
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -17,6 +18,9 @@ import java.security.cert.X509Certificate
 /**
  * Manages NvHTTP server connections: status checks, pairing, and certificate retrieval.
  * All network methods run on the calling thread — invoke from a background thread.
+ *
+ * Supports per-host certificate files (e.g. `server_{hostId}.crt`) while maintaining
+ * backward compatibility with the legacy single `server.crt`.
  */
 class ServerManager(
     private val dataDir: File,
@@ -42,6 +46,9 @@ class ServerManager(
     private val uniqueId: String
         get() = prefs?.let { getUniqueId(it) } ?: "0123456789ABCDEF"
 
+    /** The currently active cert filename, or null to use the legacy default. */
+    var activeCertFileName: String? = null
+
     data class ServerInfo(
         val hostname: String,
         val address: String,
@@ -53,11 +60,12 @@ class ServerManager(
 
     /**
      * Check server status and pair state.
+     * Uses [activeCertFileName] if set, otherwise falls back to the legacy cert.
      */
     fun checkServer(address: String): Result<ServerInfo> {
         return try {
             val addressTuple = ComputerDetails.AddressTuple(address, HTTP_PORT)
-            val savedCert = loadServerCert()
+            val savedCert = loadServerCert(activeCertFileName)
             val nvhttp = NvHTTP(addressTuple, HTTPS_PORT, uniqueId, savedCert, cryptoProvider)
             val serverInfo = nvhttp.getServerInfo(true)
             val pairState = nvhttp.getPairState(serverInfo)
@@ -96,11 +104,12 @@ class ServerManager(
 
             // Save the server cert after successful pairing
             if (pairState == PairingManager.PairState.PAIRED) {
+                val certFile = activeCertFileName
                 val cert = pm.pairedCert
                 Log.i(TAG, "PairedCert after pairing: ${cert?.subjectDN ?: "NULL"}")
                 if (cert != null) {
-                    saveServerCert(cert)
-                    Log.i(TAG, "Server certificate saved to $serverCertFile")
+                    saveServerCert(cert, certFile)
+                    Log.i(TAG, "Server certificate saved to ${certFile ?: SERVER_CERT_FILE}")
                 } else {
                     // Cert wasn't captured during pairing — try to get it via NvHTTP's internal state
                     Log.w(TAG, "Pairing succeeded but getPairedCert() returned null. Trying alternative...")
@@ -109,7 +118,7 @@ class ServerManager(
                     try {
                         val certFromTls = extractCertFromTlsHandshake(address)
                         if (certFromTls != null) {
-                            saveServerCert(certFromTls)
+                            saveServerCert(certFromTls, certFile)
                             Log.i(TAG, "Server cert saved via TLS extraction: ${certFromTls.subjectDN}")
                         }
                     } catch (e2: Exception) {
@@ -163,32 +172,84 @@ class ServerManager(
 
     /**
      * Load the saved server certificate from disk.
+     * @param certFileName optional per-host cert filename; falls back to legacy [SERVER_CERT_FILE].
      */
-    fun loadServerCert(): X509Certificate? {
+    fun loadServerCert(certFileName: String? = null): X509Certificate? {
+        val file = File(dataDir, certFileName ?: SERVER_CERT_FILE)
         return try {
-            if (!serverCertFile.exists()) {
-                Log.i(TAG, "No saved server cert found")
+            if (!file.exists()) {
+                Log.i(TAG, "No saved server cert found at ${file.name}")
                 return null
             }
             val cf = CertificateFactory.getInstance("X.509")
-            FileInputStream(serverCertFile).use { fis ->
+            FileInputStream(file).use { fis ->
                 cf.generateCertificate(fis) as X509Certificate
             }.also {
-                Log.i(TAG, "Loaded saved server cert: ${it.subjectDN}")
+                Log.i(TAG, "Loaded saved server cert from ${file.name}: ${it.subjectDN}")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load server cert", e)
+            Log.e(TAG, "Failed to load server cert from ${file.name}", e)
             null
         }
     }
 
-    private fun saveServerCert(cert: X509Certificate) {
+    /**
+     * Save a server certificate to disk.
+     * @param certFileName optional per-host cert filename; falls back to legacy [SERVER_CERT_FILE].
+     */
+    private fun saveServerCert(cert: X509Certificate, certFileName: String? = null) {
+        val file = File(dataDir, certFileName ?: SERVER_CERT_FILE)
         try {
-            FileOutputStream(serverCertFile).use { fos ->
+            FileOutputStream(file).use { fos ->
                 fos.write(cert.encoded)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save server cert", e)
+            Log.e(TAG, "Failed to save server cert to ${file.name}", e)
+        }
+    }
+
+    /**
+     * Fetch the list of apps available on the server.
+     * Maps moonlight-core [NvApp] objects to UI-friendly [ServerApp] instances.
+     * The [isRunning] flag is set for the app whose ID matches the server's current game.
+     */
+    fun getAppList(address: String): Result<List<ServerApp>> {
+        return try {
+            val addressTuple = ComputerDetails.AddressTuple(address, HTTP_PORT)
+            val savedCert = loadServerCert(activeCertFileName)
+            val nvhttp = NvHTTP(addressTuple, HTTPS_PORT, uniqueId, savedCert, cryptoProvider)
+            val serverInfo = nvhttp.getServerInfo(true)
+            val runningGameId = nvhttp.getCurrentGame(serverInfo)
+            val nvApps = nvhttp.getAppList()
+
+            val apps = nvApps.map { nvApp ->
+                ServerApp(
+                    appId = nvApp.appId,
+                    appName = nvApp.appName,
+                    isHdrSupported = nvApp.isHdrSupported,
+                    isRunning = nvApp.appId == runningGameId && runningGameId != 0,
+                )
+            }
+            Log.i(TAG, "Fetched ${apps.size} apps from $address (running=$runningGameId)")
+            Result.success(apps)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch app list from $address", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Delete a per-host certificate file.
+     */
+    fun deleteServerCert(certFileName: String) {
+        val file = File(dataDir, certFileName)
+        if (file.exists()) {
+            try {
+                file.delete()
+                Log.i(TAG, "Deleted cert file: $certFileName")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Could not delete cert file (SecurityException): $certFileName", e)
+            }
         }
     }
 

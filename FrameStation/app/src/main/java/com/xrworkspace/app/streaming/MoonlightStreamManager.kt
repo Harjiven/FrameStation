@@ -8,7 +8,6 @@ import android.content.SharedPreferences
 import android.util.Log
 import android.view.SurfaceHolder
 import com.limelight.binding.PlatformBinding
-import com.limelight.binding.audio.AndroidAudioRenderer
 import com.limelight.binding.video.CrashListener
 import com.limelight.binding.video.MediaCodecDecoderRenderer
 import com.limelight.binding.video.MediaCodecHelper
@@ -20,6 +19,11 @@ import com.limelight.nvstream.http.ComputerDetails
 import com.limelight.nvstream.http.NvHTTP
 import com.limelight.nvstream.jni.MoonBridge
 import com.limelight.preferences.PreferenceConfiguration
+import com.xrworkspace.app.model.AudioMode
+import com.xrworkspace.app.model.AudioSettings
+import com.xrworkspace.app.model.ServerApp
+import com.xrworkspace.app.model.StreamSettings
+import com.xrworkspace.app.model.VideoCodec
 import java.lang.ref.WeakReference
 import java.security.cert.X509Certificate
 
@@ -43,7 +47,10 @@ class MoonlightStreamManager(
 
     private var connection: NvConnection? = null
     private var videoRenderer: MediaCodecDecoderRenderer? = null
-    private var audioRenderer: AndroidAudioRenderer? = null
+    private var audioRenderer: SpatialAudioRenderer? = null
+
+    /** Reference to the stream startup thread so it can be interrupted on cleanup. */
+    @Volatile private var streamThread: Thread? = null
 
     var onStageChanged: ((String) -> Unit)? = null
     var onConnectionStarted: (() -> Unit)? = null
@@ -54,16 +61,70 @@ class MoonlightStreamManager(
     var streamHeight: Int = 1080
     var streamFps: Int = 60
     var streamBitrate: Int = 20000 // kbps
+    var streamCodec: VideoCodec = VideoCodec.AUTO
+
+    // Audio config — applied via applyAudioSettings() before starting a stream
+    private var audioSettings: AudioSettings = AudioSettings()
+
+    // Last connection parameters — used for reconnection
+    private var lastServerAddress: String? = null
+    private var lastSurfaceHolder: SurfaceHolder? = null
+    private var lastServerCert: X509Certificate? = null
+
+    /** Whether a stream is currently active (connected and not terminated). */
+    var isStreamingActive: Boolean = false
+        private set
+
+    /**
+     * Set to `true` when the user intentionally stops the stream.
+     * Allows [connectionTerminated] to distinguish intentional stops from network drops.
+     */
+    private var intentionalStop: Boolean = false
+
+    /**
+     * Apply user-configured stream settings before starting a stream.
+     */
+    fun applyStreamSettings(settings: StreamSettings) {
+        streamWidth = settings.resolution.width
+        streamHeight = settings.resolution.height
+        streamFps = settings.fps
+        streamBitrate = settings.bitrateKbps
+        streamCodec = settings.codec
+    }
+
+    /**
+     * Apply user-configured audio settings before starting a stream.
+     */
+    fun applyAudioSettings(settings: AudioSettings) {
+        audioSettings = settings
+    }
+
+    /**
+     * Fetch the list of apps available on the server without starting a stream.
+     * Must be called from a background thread (e.g. [Dispatchers.IO]).
+     */
+    fun fetchAppList(serverAddress: String): List<ServerApp> {
+        val serverManager = ServerManager(dataDir, prefs)
+        return serverManager.getAppList(serverAddress).getOrThrow()
+    }
 
     /**
      * Start streaming to the given server address.
+     * @param appId If provided, streams the app with this ID. If null, falls back to "Desktop" or the first app.
      */
     fun startStream(
         serverAddress: String,
         surfaceHolder: SurfaceHolder,
         serverCert: X509Certificate? = null,
+        appId: Int? = null,
     ) {
-        Thread {
+        // Store connection parameters for potential reconnection
+        lastServerAddress = serverAddress
+        lastSurfaceHolder = surfaceHolder
+        lastServerCert = serverCert
+        intentionalStop = false
+
+        val thread = Thread {
             synchronized(streamLock) {
                 try {
                     Log.i(TAG, "Starting stream to $serverAddress")
@@ -87,7 +148,7 @@ class MoonlightStreamManager(
                     val cert: X509Certificate? = serverCert ?: serverManager.loadServerCert()
                     Log.i(TAG, "Server cert: ${if (cert != null) "loaded (${cert.subjectDN})" else "NOT FOUND — pair first via the Pair button"}")
 
-                    // Get the app list and find "Desktop" or use the first app
+                    // Get the app list and resolve which app to stream
                     Log.i(TAG, "Fetching app list...")
                     activity.runOnUiThread { onStageChanged?.invoke("Fetching apps...") }
                     val uniqueId = ServerManager.getUniqueId(prefs)
@@ -95,8 +156,15 @@ class MoonlightStreamManager(
                     val serverInfo = nvhttp.getServerInfo(true)
                     val appList = nvhttp.getAppList()
 
-                    val desktopApp = appList.firstOrNull { it.appName.equals("Desktop", ignoreCase = true) }
-                        ?: appList.firstOrNull()
+                    // If an appId was specified, find that app; otherwise fall back to "Desktop" or first
+                    val desktopApp = if (appId != null) {
+                        appList.firstOrNull { it.appId == appId }
+                            ?: appList.firstOrNull { it.appName.equals("Desktop", ignoreCase = true) }
+                            ?: appList.firstOrNull()
+                    } else {
+                        appList.firstOrNull { it.appName.equals("Desktop", ignoreCase = true) }
+                            ?: appList.firstOrNull()
+                    }
 
                     if (desktopApp == null) {
                         Log.e(TAG, "No apps found on server!")
@@ -107,6 +175,16 @@ class MoonlightStreamManager(
                     }
                     Log.i(TAG, "Streaming app: ${desktopApp.appName} (ID: ${desktopApp.appId})")
 
+                    // Map codec preference to Moonlight video format flags
+                    val videoFormats = when (streamCodec) {
+                        VideoCodec.AUTO -> MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
+                        VideoCodec.H264 -> MoonBridge.VIDEO_FORMAT_H264
+                        VideoCodec.H265 -> MoonBridge.VIDEO_FORMAT_H265
+                    }
+
+                    // Resolve audio configuration from user settings
+                    val audioConfig = audioSettings.audioChannels.toMoonBridgeConfig()
+
                     // Build stream configuration WITH the app
                     val streamConfig = StreamConfiguration.Builder()
                         .setResolution(streamWidth, streamHeight)
@@ -116,10 +194,8 @@ class MoonlightStreamManager(
                         .setApp(desktopApp)
                         .setMaxPacketSize(1392)
                         .setRemoteConfiguration(StreamConfiguration.STREAM_CFG_AUTO)
-                        .setAudioConfiguration(MoonBridge.AUDIO_CONFIGURATION_STEREO)
-                        .setSupportedVideoFormats(
-                            MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
-                        )
+                        .setAudioConfiguration(audioConfig)
+                        .setSupportedVideoFormats(videoFormats)
                         .build()
 
                     // Create connection
@@ -138,13 +214,17 @@ class MoonlightStreamManager(
                         height = streamHeight
                         fps = streamFps
                         bitrate = streamBitrate
-                        videoFormat = PreferenceConfiguration.FormatOption.AUTO
+                        videoFormat = when (streamCodec) {
+                            VideoCodec.AUTO -> PreferenceConfiguration.FormatOption.AUTO
+                            VideoCodec.H264 -> PreferenceConfiguration.FormatOption.FORCE_H264
+                            VideoCodec.H265 -> PreferenceConfiguration.FormatOption.FORCE_HEVC
+                        }
                         framePacing = PreferenceConfiguration.FRAME_PACING_BALANCED
                         enableHdr = false
                         enablePerfOverlay = false
                         absoluteMouseMode = true
-                        audioConfiguration = MoonBridge.AUDIO_CONFIGURATION_STEREO
-                        enableAudioFx = false
+                        audioConfiguration = audioConfig
+                        enableAudioFx = audioSettings.enableAudioFx
                     }
 
                     // Create video decoder/renderer
@@ -170,8 +250,14 @@ class MoonlightStreamManager(
                     // Set the SurfaceHolder as the render target
                     videoRenderer?.setRenderTarget(surfaceHolder)
 
-                    // Create audio renderer
-                    audioRenderer = AndroidAudioRenderer(activity, rendererPrefs.enableAudioFx)
+                    // Create spatial audio renderer with runtime mute toggle.
+                    // Uses USAGE_MEDIA + CONTENT_TYPE_MOVIE so the XR runtime spatializes
+                    // audio relative to the panel's world position, not head-locked.
+                    val isMuted = audioSettings.audioMode == AudioMode.MUTED
+                    Log.i(TAG, "Audio mode: ${audioSettings.audioMode.label}, channels: ${audioSettings.audioChannels.label}, fx: ${audioSettings.enableAudioFx}")
+                    audioRenderer = SpatialAudioRenderer(activity).apply {
+                        this.isMuted = isMuted
+                    }
 
                     // Start the connection — this drives the streaming pipeline
                     Log.i(TAG, "Starting NvConnection...")
@@ -183,14 +269,35 @@ class MoonlightStreamManager(
                     activityRef.get()?.runOnUiThread {
                         onConnectionTerminated?.invoke("Failed: ${e.message}")
                     }
+                } finally {
+                    streamThread = null
                 }
             }
-        }.start()
+        }
+        thread.name = "FrameStation-StreamThread"
+        streamThread = thread
+        thread.start()
+    }
+
+    /**
+     * Toggle audio mute state at runtime without restarting the stream.
+     * When muted, audio samples are silently discarded.
+     */
+    fun setMuted(muted: Boolean) {
+        audioRenderer?.isMuted = muted
+        Log.i(TAG, "Audio muted: $muted")
     }
 
     fun stopStream() {
+        intentionalStop = true
+        isStreamingActive = false
+        // Interrupt the startup thread if it is still running (e.g. stuck on app-list fetch).
+        streamThread?.let {
+            Log.i(TAG, "Interrupting stream startup thread")
+            it.interrupt()
+        }
         synchronized(streamLock) {
-            Log.i(TAG, "Stopping stream")
+            Log.i(TAG, "Stopping stream (intentional)")
             try {
                 connection?.stop()
             } catch (e: Exception) {
@@ -201,6 +308,23 @@ class MoonlightStreamManager(
             audioRenderer = null
         }
     }
+
+    /**
+     * Attempt to reconnect using the last known connection parameters.
+     * Returns `true` if the reconnect was initiated, `false` if parameters are missing.
+     */
+    fun reconnect(): Boolean {
+        val address = lastServerAddress ?: return false
+        val holder = lastSurfaceHolder ?: return false
+        Log.i(TAG, "Reconnecting to $address")
+        startStream(address, holder, lastServerCert)
+        return true
+    }
+
+    /**
+     * Whether the last disconnection was intentional (user-initiated stop).
+     */
+    fun wasIntentionalStop(): Boolean = intentionalStop
 
     // --- Input forwarding ---
 
@@ -248,11 +372,15 @@ class MoonlightStreamManager(
 
     override fun connectionStarted() {
         Log.i(TAG, "Connection started — streaming!")
+        isStreamingActive = true
+        intentionalStop = false
         activityRef.get()?.runOnUiThread { onConnectionStarted?.invoke() }
     }
 
     override fun connectionTerminated(errorCode: Int) {
-        Log.i(TAG, "Connection terminated: $errorCode")
+        val wasIntentional = intentionalStop
+        isStreamingActive = false
+        Log.i(TAG, "Connection terminated: errorCode=$errorCode, intentional=$wasIntentional")
         activityRef.get()?.runOnUiThread {
             onConnectionTerminated?.invoke(
                 if (errorCode != 0) "Connection lost (error $errorCode)" else null,

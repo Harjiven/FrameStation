@@ -23,6 +23,7 @@ class BookmarkManager(private val prefs: SharedPreferences) {
                     name = obj.getString("name"),
                     url = obj.getString("url"),
                     icon = obj.optString("icon", "").ifEmpty { null },
+                    useDesktopUa = obj.optBoolean("useDesktopUa", false),
                 )
             }
         } catch (e: Exception) {
@@ -32,12 +33,14 @@ class BookmarkManager(private val prefs: SharedPreferences) {
 
     fun saveBookmarks(bookmarks: List<Bookmark>) {
         val arr = JSONArray()
-        bookmarks.forEach { b ->
+        // Never persist ephemeral tabs — they exist only in memory
+        bookmarks.filter { !it.isEphemeral }.forEach { b ->
             arr.put(JSONObject().apply {
                 put("id", b.id)
                 put("name", b.name)
                 put("url", b.url)
                 put("icon", b.icon ?: "")
+                put("useDesktopUa", b.useDesktopUa)
             })
         }
         prefs.edit().putString(KEY, arr.toString()).apply()

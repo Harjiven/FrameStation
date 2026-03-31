@@ -11,13 +11,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -39,6 +44,8 @@ fun BookmarkManagerPanel(
     onToggleBookmark: (String) -> Unit,
     onAddBookmark: (String, String) -> Unit,
     onRemoveBookmark: (String) -> Unit,
+    onUpdateBookmarkUa: (id: String, useDesktopUa: Boolean) -> Unit = { _, _ -> },
+    onNewTab: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val newName = remember { mutableStateOf("") }
@@ -99,6 +106,13 @@ fun BookmarkManagerPanel(
                             )
                         }
 
+                        // User-agent toggle: Desktop Chrome vs default mobile
+                        FilterChip(
+                            selected = bookmark.useDesktopUa,
+                            onClick = { onUpdateBookmarkUa(bookmark.id, !bookmark.useDesktopUa) },
+                            label = { Text(if (bookmark.useDesktopUa) "Desktop" else "Mobile") },
+                        )
+
                         // Toggle open/close
                         FilterChip(
                             selected = bookmark.id in openBookmarkIds,
@@ -125,10 +139,30 @@ fun BookmarkManagerPanel(
             // Add bookmark section
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-            Text(
-                text = "Add Bookmark",
-                style = MaterialTheme.typography.titleSmall,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Add Bookmark",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                OutlinedButton(
+                    onClick = {
+                        onNewTab()
+                        onDismiss()
+                    },
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("New Tab")
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(

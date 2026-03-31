@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.WifiFind
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -65,6 +67,7 @@ fun PairingPanel(
     onConnect: (String) -> Unit,
     onAddressChanged: (String) -> Unit,
     onDismiss: () -> Unit,
+    onScanNetwork: (() -> Unit)? = null,
     dataDir: File,
 ) {
     val scope = rememberCoroutineScope()
@@ -297,6 +300,23 @@ fun PairingPanel(
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                         ) {
                             Text("Check Server")
+                        }
+                        if (onScanNetwork != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    onDismiss()
+                                    onScanNetwork()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.WifiFind,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Scan Network")
+                            }
                         }
                     }
                     PairingStep.SERVER_UNREACHABLE, PairingStep.PAIR_FAILED -> {

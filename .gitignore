@@ -25,6 +25,9 @@ Obj/
 Logs/
 UserSettings/
 
+# Archive
+Archive/
+
 # Gradle
 .gradle/
 local.properties

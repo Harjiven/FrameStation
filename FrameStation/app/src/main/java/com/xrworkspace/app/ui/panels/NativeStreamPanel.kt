@@ -18,24 +18,33 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +58,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.limelight.nvstream.input.KeyboardPacket
 import com.limelight.nvstream.input.MouseButtonPacket
+import com.xrworkspace.app.model.AudioMode
+import com.xrworkspace.app.model.AudioSettings
+import com.xrworkspace.app.model.StreamSettings
+import com.xrworkspace.app.streaming.AutoReconnectManager
 import com.xrworkspace.app.streaming.MoonlightStreamManager
+import com.xrworkspace.app.streaming.NetworkMonitor
+import com.xrworkspace.app.streaming.ReconnectState
+import com.xrworkspace.app.viewmodel.WolState
 import java.security.cert.X509Certificate
 
 /**
@@ -62,12 +78,22 @@ fun NativeStreamPanel(
     serverAddress: String,
     modifier: Modifier = Modifier,
     serverCert: X509Certificate? = null,
+    streamSettings: StreamSettings = StreamSettings(),
+    audioSettings: AudioSettings = AudioSettings(),
+    autoReconnectEnabled: Boolean = true,
+    selectedAppId: Int? = null,
+    selectedAppName: String = "Desktop",
+    onAppSelectorClick: (() -> Unit)? = null,
+    hasMacAddress: Boolean = false,
+    wolState: WolState = WolState.Idle,
+    onWakeClick: (() -> Unit)? = null,
     onStreamingStateChanged: ((Boolean) -> Unit)? = null,
     streamController: StreamController? = null,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("framestation_prefs", android.content.Context.MODE_PRIVATE) }
 
     var statusText by remember { mutableStateOf("Ready to connect") }
@@ -76,6 +102,34 @@ fun NativeStreamPanel(
     var hasDisconnected by remember { mutableStateOf(false) }
     var surfaceHolderRef by remember { mutableStateOf<SurfaceHolder?>(null) }
     var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
+    var reconnectAttemptNumber by remember { mutableIntStateOf(0) }
+
+    // Network monitor — tracks Wi-Fi connectivity state
+    val networkMonitor = remember { NetworkMonitor(context) }
+
+    // Auto-reconnect manager — handles reconnection logic with exponential backoff
+    val autoReconnectManager = remember {
+        AutoReconnectManager(networkMonitor, coroutineScope).apply {
+            isEnabled = autoReconnectEnabled
+            onReconnectAttempt = { attempt ->
+                reconnectAttemptNumber = attempt
+                statusText = "Reconnecting (attempt $attempt/$maxRetries)..."
+            }
+            onReconnectSuccess = {
+                reconnectAttemptNumber = 0
+            }
+            onReconnectFailed = { reason ->
+                statusText = "Reconnect failed: $reason"
+            }
+            onReconnectGaveUp = {
+                reconnectAttemptNumber = 0
+                statusText = "Auto-reconnect failed — tap Reconnect to try manually"
+            }
+        }
+    }
+
+    // Observe reconnect state for UI updates
+    val reconnectState by autoReconnectManager.reconnectState.collectAsState()
 
     val streamManager = remember {
         activity?.let {
@@ -85,14 +139,21 @@ fun NativeStreamPanel(
                     isConnected = true
                     isConnecting = false
                     statusText = "Connected"
+                    autoReconnectManager.cancelReconnect()
                     onStreamingStateChanged?.invoke(true)
                 }
                 onConnectionTerminated = { reason ->
+                    val wasIntentional = wasIntentionalStop()
                     isConnected = false
                     isConnecting = false
                     hasDisconnected = true
                     statusText = reason ?: "Disconnected"
                     onStreamingStateChanged?.invoke(false)
+
+                    // Trigger auto-reconnect if the drop was not intentional
+                    if (!wasIntentional && autoReconnectEnabled) {
+                        autoReconnectManager.onStreamTerminated()
+                    }
                 }
             }
         }
@@ -100,6 +161,15 @@ fun NativeStreamPanel(
 
     // Lifecycle observer — pause/resume streaming on app background/foreground
     DisposableEffect(lifecycleOwner) {
+        networkMonitor.startMonitoring()
+
+        // Start auto-reconnect monitoring with the stream manager's reconnect method
+        if (autoReconnectEnabled && streamManager != null) {
+            autoReconnectManager.startMonitoring {
+                streamManager.reconnect()
+            }
+        }
+
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
@@ -114,23 +184,30 @@ fun NativeStreamPanel(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            autoReconnectManager.stopMonitoring()
+            networkMonitor.stopMonitoring()
             streamManager?.stopStream()
             onStreamingStateChanged?.invoke(false)
         }
     }
 
     fun startStreaming() {
+        // Cancel any pending auto-reconnect when user manually starts a stream
+        autoReconnectManager.cancelReconnect()
         val holder = surfaceHolderRef
         if (holder != null && activity != null) {
             isConnecting = true
             statusText = "Connecting..."
-            streamManager?.startStream(serverAddress, holder, serverCert)
+            streamManager?.applyStreamSettings(streamSettings)
+            streamManager?.applyAudioSettings(audioSettings)
+            streamManager?.startStream(serverAddress, holder, serverCert, selectedAppId)
         } else {
             statusText = "Surface not ready — wait a moment and try again"
         }
     }
 
     fun stopStreaming() {
+        autoReconnectManager.cancelReconnect()
         streamManager?.stopStream()
         isConnected = false
         isConnecting = false
@@ -139,16 +216,30 @@ fun NativeStreamPanel(
         onStreamingStateChanged?.invoke(false)
     }
 
-    // Keyboard mode — shows a typing bar at the bottom of the panel
+    // Apply audio mute state changes to the active stream in real-time
+    val currentMuted = audioSettings.audioMode == AudioMode.MUTED
+    LaunchedEffect(currentMuted) {
+        if (isConnected) {
+            streamManager?.setMuted(currentMuted)
+        }
+    }
+
     var showKeyboardBar by remember { mutableStateOf(false) }
 
     fun showKeyboard() {
         showKeyboardBar = !showKeyboardBar
     }
 
-    // Wire stream controller for external stop/keyboard triggers (toolbar)
-    streamController?.onStopStream = { stopStreaming() }
-    streamController?.onShowKeyboard = { showKeyboard() }
+    // Wire stream controller for external stop/keyboard/monitor triggers (toolbar)
+    DisposableEffect(streamController) {
+        streamController?.onStopStream = { stopStreaming() }
+        streamController?.onShowKeyboard = { showKeyboard() }
+        onDispose {
+            streamController?.onStopStream = null
+            streamController?.onShowKeyboard = null
+        }
+    }
+    // Monitor switching is handled by the MonitorPickerPanel popup via SpatialWorkspace
 
     Box(modifier = modifier.fillMaxSize()) {
         // SurfaceView for video rendering
@@ -295,14 +386,10 @@ fun NativeStreamPanel(
                     ),
                     keyboardActions = KeyboardActions(
                         onSend = {
-                            // Send Enter key
-                            streamManager?.sendKeyboardInput(
-                                0x0D.toShort(), KeyboardPacket.KEY_DOWN, 0, 0
-                            )
-                            streamManager?.sendKeyboardInput(
-                                0x0D.toShort(), KeyboardPacket.KEY_UP, 0, 0
-                            )
-                            typingText = ""
+                            if (typingText.isNotBlank()) {
+                                streamManager?.sendUtf8Text(typingText)
+                                typingText = ""
+                            }
                         }
                     ),
                 )
@@ -310,16 +397,13 @@ fun NativeStreamPanel(
                 // Enter button
                 Button(
                     onClick = {
-                        streamManager?.sendKeyboardInput(
-                            0x0D.toShort(), KeyboardPacket.KEY_DOWN, 0, 0
-                        )
-                        streamManager?.sendKeyboardInput(
-                            0x0D.toShort(), KeyboardPacket.KEY_UP, 0, 0
-                        )
-                        typingText = ""
+                        if (typingText.isNotBlank()) {
+                            streamManager?.sendUtf8Text(typingText)
+                            typingText = ""
+                        }
                     }
                 ) {
-                    Text("Enter")
+                    Text("Send")
                 }
                 Spacer(modifier = Modifier.width(4.dp))
                 // Close keyboard bar
@@ -333,6 +417,9 @@ fun NativeStreamPanel(
 
         // Overlay when not connected
         if (!isConnected) {
+            val isAutoReconnecting = reconnectState == ReconnectState.WaitingForNetwork ||
+                reconnectState == ReconnectState.Reconnecting
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -343,8 +430,14 @@ fun NativeStreamPanel(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    // Status text — shows reconnect state when auto-reconnecting
                     Text(
-                        text = statusText,
+                        text = when (reconnectState) {
+                            ReconnectState.WaitingForNetwork -> "Network lost... waiting for Wi-Fi"
+                            ReconnectState.Reconnecting -> "Reconnecting (attempt $reconnectAttemptNumber/${autoReconnectManager.maxRetries})..."
+                            ReconnectState.Failed -> "Auto-reconnect failed"
+                            ReconnectState.Idle -> statusText
+                        },
                         color = Color.White,
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -357,12 +450,72 @@ fun NativeStreamPanel(
                         )
                     }
 
-                    if (!isConnecting) {
+                    // Cancel button — visible during auto-reconnect
+                    if (isAutoReconnecting) {
+                        OutlinedButton(
+                            onClick = {
+                                autoReconnectManager.cancelReconnect()
+                                statusText = "Disconnected"
+                                reconnectAttemptNumber = 0
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color.White,
+                            ),
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+
+                    // App selector chip — shows currently selected app
+                    if (!isConnecting && !isAutoReconnecting) {
+                        FilterChip(
+                            selected = true,
+                            onClick = { onAppSelectorClick?.invoke() },
+                            label = { Text("App: $selectedAppName") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Apps,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                        )
+                    }
+
+                    // Manual reconnect/start button — hidden during auto-reconnect
+                    if (!isConnecting && !isAutoReconnecting) {
                         Button(
                             onClick = { startStreaming() },
                             enabled = serverAddress.isNotBlank(),
                         ) {
                             Text(if (hasDisconnected) "Reconnect" else "Start Stream")
+                        }
+                    }
+
+                    // Wake-on-LAN button — shown when MAC is configured and not connecting
+                    if (hasMacAddress && !isConnecting && !isAutoReconnecting) {
+                        OutlinedButton(
+                            onClick = { onWakeClick?.invoke() },
+                            enabled = wolState == WolState.Idle || wolState == WolState.Failed,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color.White,
+                            ),
+                        ) {
+                            Text(
+                                when (wolState) {
+                                    WolState.Idle -> "Wake PC"
+                                    WolState.Sending -> "Sending wake packet..."
+                                    WolState.Sent -> "Wake packet sent!"
+                                    WolState.Failed -> "Failed to send wake packet"
+                                }
+                            )
+                        }
+                        if (wolState == WolState.Sent) {
+                            Text(
+                                text = "Wait ~30 seconds, then try connecting",
+                                color = Color.White.copy(alpha = 0.6f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                     }
                 }
@@ -381,9 +534,11 @@ fun rememberStreamController(): StreamController {
 class StreamController {
     var onStopStream: (() -> Unit)? = null
     var onShowKeyboard: (() -> Unit)? = null
+    var onSwitchMonitor: (() -> Unit)? = null
 
     fun stopStream() { onStopStream?.invoke() }
     fun showKeyboard() { onShowKeyboard?.invoke() }
+    fun switchMonitor() { onSwitchMonitor?.invoke() }
 }
 
 /**
