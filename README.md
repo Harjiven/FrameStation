@@ -1,5 +1,5 @@
 # FrameStation
-<img width="1280" height="720" alt="framexr_logo_transparent" src="https://github.com/user-attachments/assets/2b809d4e-7158-495b-a1ff-82587e2f54c9" />
+<img width="640" height="360" alt="framexr_logo_transparent" src="https://github.com/user-attachments/assets/2b809d4e-7158-495b-a1ff-82587e2f54c9" />
 
 A multi-panel spatial workspace app for Android XR that streams your PC desktop into an immersive XR environment at ~20-40ms latency by using Moonlight streaming into curved (eventually) spatial panels. Includes the ability to open many browser tabs (such for Spotify, Youtube and web browsing) to seamlessly add to your workflow. Built with Jetpack Compose for XR and Kotlin. GPLv3 licensed.
 
