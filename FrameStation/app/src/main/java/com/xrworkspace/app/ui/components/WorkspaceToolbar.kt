@@ -15,8 +15,8 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.ViewQuilt
@@ -90,19 +90,29 @@ fun WorkspaceToolbar(
                     selected = isPassthroughActive,
                     onClick = { onTogglePassthrough?.invoke() },
                     label = {
-                        Icon(
-                            imageVector = if (isPassthroughActive)
-                                Icons.Default.RemoveRedEye
-                            else
-                                Icons.Default.VisibilityOff,
-                            contentDescription = if (isPassthroughActive) "Disable passthrough" else "Enable passthrough",
-                            modifier = Modifier.size(18.dp),
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = if (isPassthroughActive)
+                                    Icons.Default.Visibility        // open eye = see-through active
+                                else
+                                    Icons.Default.VisibilityOff,    // closed eye = fully virtual
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(if (isPassthroughActive) "Passthrough" else "Virtual")
+                        }
                     },
                     colors = if (isPassthroughActive) FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) else FilterChipDefaults.filterChipColors(),
+                )
+                VerticalDivider(
+                    modifier = Modifier.height(32.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                 )
             }
 

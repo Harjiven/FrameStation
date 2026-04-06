@@ -171,6 +171,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 sunshinePassword = sunshinePassword,
                 curvedPanelSettings = curvedPanelSettings,
                 layoutPresets = layoutPresets,
+                isPassthroughActive = sharedPreferences.getBoolean("passthrough_active", false),
             )
         )
 
@@ -799,9 +800,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(showLayoutPresets = !it.showLayoutPresets) }
     }
 
-    /** Toggle between passthrough (see-through) and virtual environment. */
+    /** Toggle between passthrough (see-through) and virtual environment. Persisted across restarts. */
     fun togglePassthrough() {
-        _uiState.update { it.copy(isPassthroughActive = !it.isPassthroughActive) }
+        val newValue = !_uiState.value.isPassthroughActive
+        _uiState.update { it.copy(isPassthroughActive = newValue) }
+        sharedPreferences.edit().putBoolean("passthrough_active", newValue).apply()
     }
 
     /**

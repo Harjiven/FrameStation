@@ -58,12 +58,14 @@
 - **Orbiter Toolbar** -- Docked to the bottom edge of the main panel, always accessible.
 - **Desktop Toggle** -- Show/hide the main streaming panel.
 - **Bookmark Chips** -- Quick toggle for each open bookmark panel.
-- **Streaming Controls** -- Keyboard toggle and Stop Stream button (appears while streaming).
-- **Management Actions** -- Chips for Bookmarks Manager, Host Manager, Pair, and Settings.
+- **Streaming Controls** -- Audio mute (shows channel mode), Stop Stream, Monitor Switch, and Keyboard toggle (all appear while streaming).
+- **Passthrough Toggle** -- Eye-icon chip toggles between see-through (passthrough) and virtual environment modes. Only shown on devices where `isPassthroughControlEnabled` is true.
+- **Management Actions** -- Chips for Bookmarks Manager, Host Manager, Discover, Pair, Layout Presets, and Settings.
 
 ### Settings & Compliance
 
 - **Curved Panel Settings** -- Enable/disable arc layout, configure arc radius (400-1600dp).
+- **Workspace Layout Presets** -- Save and recall panel arrangements (positions, sizes, open bookmarks) as named workspace layouts via the Layout Presets panel (toolbar icon).
 - **Non-XR Device Fallback** -- Flat Material3 UI (`FallbackWorkspace`) shown when `isSpatialUiEnabled` is false. Displays device compatibility warning, connection info, stream settings, and bookmarks. XR feature declared `android:required="false"` so the app installs on any Android 14+ device.
 - **GPLv3 About Dialog** -- In-app "About & License" panel with copyright notice, warranty disclaimer, source availability, and third-party notices as required by GPLv3 Section 4(d).
 - **Persistence** -- All settings, layout state, bookmarks, and device ID saved across sessions.
@@ -74,8 +76,5 @@
 
 ### Long-Term
 
-- **Passthrough / Environment Toggle** -- Switch between full passthrough (see-through) and virtual environment modes from within the workspace.
-
-- **Custom XR Ray-Cast Input** -- Direct ray-casting and coordinate mapping for `SpatialExternalSurface` panels, replacing the current touch event pipeline for more precise pointer control.
-- **Workspace Layout Presets** -- Save and recall panel arrangements (positions, sizes, which bookmarks are open) as named workspace layouts.
+- **Custom XR Ray-Cast Input** -- Further precision improvements for `SpatialExternalSurface` pointer input (e.g. sub-pixel ray-hit refinement). Current input uses `SpatialInputEvent.hitPosition` with dynamic panel size tracking for accurate coordinate mapping after resize.
 - **True N-Stream Support** -- Refactor `moonlight-common-c` to be instance-aware (instance-scoped C globals instead of process-globals) to support N>3 simultaneous streams without process overhead (~2MB per stream vs ~25MB per process).
