@@ -18,7 +18,9 @@
 - **H.264, H.265, and AV1 Codec Support** -- All three codecs supported; AUTO mode advertises all available formats and lets the server pick the best. AV1 requires Android 10 (API 29); falls back to H.265 on older devices.
 - **HDR Streaming** -- Enable 10-bit HDR (H.265 Main10 / AV1 Main10, BT.2020 color space) via toggle in Settings. Requires an HDR-capable server and display. H.264 streams remain SDR.
 - **Per-Host Quality Profiles** -- Resolution (360p–4K), framerate, bitrate, codec, and HDR configurable per host PC with a quality profile editor in the Host Manager.
-- **Audio Playback** -- Stream audio plays through the headset via `SpatialAudioRenderer`.
+- **Spatial Audio Playback** -- Stream audio rendered via `SpatialAudioRenderer` using `USAGE_GAME` + `SPATIALIZER_BEHAVIOR_AUTO` (API 32+) so audio tracks the streaming panel's world-space position as the user moves it.
+- **Surround Sound (Stereo / 5.1 / 7.1)** -- Full multi-channel support via Opus multistream. Channel configuration selectable in Settings; `SpatialAudioRenderer` creates the appropriate `AudioTrack` channel mask for 2, 6, or 8 channels. The PC's full audio output (games, desktop, system sounds) is encoded and routed through the headset.
+- **Audio Mute** -- Toggle to silence stream audio at runtime without stopping the stream.
 - **Connection Overlay** -- Displays server address, connection status, and Start Stream / Reconnect controls when not actively streaming.
 - **Multiple Simultaneous Streams** -- Up to 2 host PCs can stream simultaneously, each in its own isolated process (`:stream0`, `:stream1`) with independent `libmoonlight-core.so` state.
 
@@ -69,14 +71,6 @@
 ---
 
 ## Planned Features
-
-### Short-Term
-
-- **PC-to-Headset Audio Passthrough** -- Route PC system audio directly to the headset as a dedicated audio stream, independent of the game/desktop stream audio.
-
-### Medium-Term
-
-- **Surround Sound (5.1 / 7.1)** -- Upgrade from stereo to multi-channel audio. The core library supports 5.1 and 7.1 configurations.
 
 ### Long-Term
 
