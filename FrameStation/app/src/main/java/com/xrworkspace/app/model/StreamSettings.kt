@@ -29,11 +29,11 @@ enum class Resolution(val width: Int, val height: Int, val label: String) {
  * Video codec preference for the stream.
  */
 enum class VideoCodec(val label: String) {
-    AUTO("Auto (H.264/H.265/AV1)"),
+    AUTO("Auto (best available)"),
     H264("H.264 only"),
     H265("H.265 only"),
-    AV1_MAIN8("AV1 (SDR, requires API 29+)"),
-    AV1_MAIN10("AV1 10-bit (requires API 29+)"),
+    AV1_MAIN8("AV1 SDR (Android 10+)"),
+    AV1_MAIN10("AV1 10-bit (Android 10+)"),
 }
 
 /**

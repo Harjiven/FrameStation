@@ -48,6 +48,7 @@ import com.xrworkspace.app.model.Resolution
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.model.VideoCodec
 import com.xrworkspace.app.model.recommendedBitrateKbps
+import android.os.Build
 import kotlin.math.roundToInt
 
 /**
@@ -360,8 +361,22 @@ fun SettingsPanel(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Warn when AV1 is selected on pre-API-29 devices (will silently fall back to H.265)
+                val isAv1Selected = selectedCodec == VideoCodec.AV1_MAIN8 ||
+                    selectedCodec == VideoCodec.AV1_MAIN10
+                val av1Available = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                if (isAv1Selected && !av1Available) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "AV1 requires Android 10 (API 29) — will fall back to H.265 on this device",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
+                // HDR requires H.265 or AV1 Main10 — disable when H.264 is forced
+                val hdrSupported = selectedCodec != VideoCodec.H264
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -371,16 +386,20 @@ fun SettingsPanel(
                         Text(
                             text = "HDR Streaming",
                             style = MaterialTheme.typography.bodyMedium,
+                            color = if (hdrSupported) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                         )
                         Text(
-                            text = "H.265 Main10 / AV1 Main10, BT.2020 — server must support HDR",
+                            text = if (hdrSupported) "H.265 Main10 / AV1 Main10, BT.2020 — server must support HDR"
+                                   else "H.264 does not support HDR — select H.265 or AV1",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
-                        checked = enableHdr,
-                        onCheckedChange = { enableHdr = it },
+                        checked = enableHdr && hdrSupported,
+                        onCheckedChange = { if (hdrSupported) enableHdr = it },
+                        enabled = hdrSupported,
                     )
                 }
 

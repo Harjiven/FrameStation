@@ -113,8 +113,8 @@ class StreamService : Service() {
         ) {
             streamManager?.sendControllerInput(
                 buttonFlags,
-                leftTrigger.toByte(),
-                rightTrigger.toByte(),
+                (leftTrigger and 0xFF).toByte(),   // mask before cast: 200 stays 200, not -56
+                (rightTrigger and 0xFF).toByte(),
                 leftStickX.toShort(),
                 leftStickY.toShort(),
                 rightStickX.toShort(),

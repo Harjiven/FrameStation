@@ -15,7 +15,6 @@ import com.limelight.binding.video.CrashListener
 import com.limelight.binding.video.MediaCodecDecoderRenderer
 import com.limelight.binding.video.MediaCodecHelper
 import com.limelight.binding.video.PerfOverlayListener
-import com.limelight.nvstream.input.ControllerPacket
 import com.limelight.nvstream.NvConnection
 import com.limelight.nvstream.NvConnectionListener
 import com.limelight.nvstream.StreamConfiguration

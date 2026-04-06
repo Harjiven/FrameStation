@@ -15,8 +15,9 @@
 
 - **Embedded Moonlight Core** -- Native streaming via an extracted and embedded `moonlight-core` library module with a pre-built `libmoonlight-core.so` (arm64-v8a).
 - **Low-Latency Video via SpatialExternalSurface** -- Video decoded via `MediaCodecDecoderRenderer` and rendered directly to `SpatialExternalSurface`, bypassing AndroidView compositing for ~20-40ms latency.
-- **H.264 & H.265 Support** -- Both codecs enabled by default for broad server compatibility.
-- **Per-Host Quality Profiles** -- Resolution (360p–4K), framerate, and bitrate configurable per host PC with a quality profile editor in the Host Manager.
+- **H.264, H.265, and AV1 Codec Support** -- All three codecs supported; AUTO mode advertises all available formats and lets the server pick the best. AV1 requires Android 10 (API 29); falls back to H.265 on older devices.
+- **HDR Streaming** -- Enable 10-bit HDR (H.265 Main10 / AV1 Main10, BT.2020 color space) via toggle in Settings. Requires an HDR-capable server and display. H.264 streams remain SDR.
+- **Per-Host Quality Profiles** -- Resolution (360p–4K), framerate, bitrate, codec, and HDR configurable per host PC with a quality profile editor in the Host Manager.
 - **Audio Playback** -- Stream audio plays through the headset via `SpatialAudioRenderer`.
 - **Connection Overlay** -- Displays server address, connection status, and Start Stream / Reconnect controls when not actively streaming.
 - **Multiple Simultaneous Streams** -- Up to 2 host PCs can stream simultaneously, each in its own isolated process (`:stream0`, `:stream1`) with independent `libmoonlight-core.so` state.
@@ -37,6 +38,7 @@
 - **Touch-to-Mouse Mapping** -- Touch/ray input (from hand tracking or controllers) via `SpatialInputEvent` translated to mouse position and click events, with coordinate mapping from panel-center-origin to stream resolution.
 - **Hardware Keyboard Forwarding** -- Physical (Bluetooth) keyboard input translated to Windows virtual keycodes covering A-Z, 0-9, F1-F12, arrows, modifiers (Shift, Ctrl, Alt, Meta), punctuation, navigation keys, and lock keys.
 - **Soft Keyboard / Typing Bar** -- Toggleable on-screen text field that sends each typed character as UTF-8 text and handles Backspace/Enter as key events.
+- **Gamepad Input Forwarding** -- Physical Bluetooth/USB gamepads and XR controllers forwarded to the host PC via `ControllerPacket`. Full button mapping (A/B/X/Y, bumpers, triggers, sticks, d-pad, start/select) plus analog stick and trigger axes with per-device deadzone.
 - **App Selection UI** -- Choose which application to stream from the host PC (games, specific apps) rather than always streaming the Desktop.
 - **XR Hand Tracking & Controllers** -- Work natively through the XR spatial input system without requiring special handling.
 
@@ -73,10 +75,7 @@
 
 ### Medium-Term
 
-- **AV1 Codec Support** -- Enable AV1 decoding for improved quality at lower bitrates. The core library defines AV1 constants but the stream config does not currently enable them.
-- **HDR Streaming** -- Enable 10-bit HDR output (H.265 Main10, AV1 Main10, BT.2020 color space). The core library has full HDR support; it is currently disabled.
 - **Surround Sound (5.1 / 7.1)** -- Upgrade from stereo to multi-channel audio. The core library supports 5.1 and 7.1 configurations.
-- **Gamepad Input Forwarding** -- Forward XR controller or connected Bluetooth gamepad inputs as gamepad events to the host PC. `ControllerPacket` exists in moonlight-core but no gamepad handling is implemented in the app.
 
 ### Long-Term
 

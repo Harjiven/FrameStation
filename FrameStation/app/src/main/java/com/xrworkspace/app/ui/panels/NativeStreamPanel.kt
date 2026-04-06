@@ -8,9 +8,10 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
-import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
 import com.limelight.nvstream.input.ControllerPacket
+import kotlin.math.abs
 import androidx.xr.compose.subspace.SpatialExternalSurface
 import androidx.xr.compose.subspace.StereoMode
 import androidx.xr.compose.subspace.layout.InteractionPolicy
@@ -141,7 +142,7 @@ fun NativeStreamPanel(
             if (!isJoystick) return@OnGenericMotionListener false
             val device = InputDevice.getDevice(event.deviceId) ?: return@OnGenericMotionListener false
             val flat = device.getMotionRange(MotionEvent.AXIS_X, event.source)?.flat ?: 0.1f
-            fun deadzone(v: Float) = if (kotlin.math.abs(v) > flat) v else 0f
+            fun deadzone(v: Float) = if (abs(v) > flat) v else 0f
             gamepadLX = deadzone(event.getAxisValue(MotionEvent.AXIS_X))
             gamepadLY = deadzone(event.getAxisValue(MotionEvent.AXIS_Y))
             gamepadRX = deadzone(event.getAxisValue(MotionEvent.AXIS_Z))
