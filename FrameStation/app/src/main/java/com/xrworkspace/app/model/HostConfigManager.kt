@@ -25,6 +25,19 @@ class HostConfigManager(private val prefs: SharedPreferences) {
             val arr = JSONArray(json)
             (0 until arr.length()).map { i ->
                 val obj = arr.getJSONObject(i)
+                val qualityProfile = if (obj.has("qualityProfile")) {
+                    try {
+                        val qp = obj.getJSONObject("qualityProfile")
+                        StreamSettings(
+                            resolution = qp.optString("resolution", Resolution.RES_1080P.name)
+                                .let { name -> Resolution.entries.firstOrNull { it.name == name } ?: Resolution.RES_1080P },
+                            fps = qp.optInt("fps", 60),
+                            bitrateKbps = qp.optInt("bitrateKbps", 20000),
+                            codec = qp.optString("codec", VideoCodec.AUTO.name)
+                                .let { name -> VideoCodec.entries.firstOrNull { it.name == name } ?: VideoCodec.AUTO },
+                        )
+                    } catch (_: Exception) { null }
+                } else null
                 HostConfig(
                     id = obj.getString("id"),
                     name = obj.getString("name"),
@@ -34,6 +47,7 @@ class HostConfigManager(private val prefs: SharedPreferences) {
                     gpuType = obj.optString("gpuType", "").ifEmpty { null },
                     certFileName = obj.optString("certFileName", "").ifEmpty { null },
                     lastConnected = obj.optLong("lastConnected", 0L),
+                    qualityProfile = qualityProfile,
                 )
             }
         } catch (e: Exception) {
@@ -53,6 +67,14 @@ class HostConfigManager(private val prefs: SharedPreferences) {
                 put("gpuType", h.gpuType ?: "")
                 put("certFileName", h.certFileName ?: "")
                 put("lastConnected", h.lastConnected)
+                if (h.qualityProfile != null) {
+                    put("qualityProfile", JSONObject().apply {
+                        put("resolution", h.qualityProfile.resolution.name)
+                        put("fps", h.qualityProfile.fps)
+                        put("bitrateKbps", h.qualityProfile.bitrateKbps)
+                        put("codec", h.qualityProfile.codec.name)
+                    })
+                }
             })
         }
         prefs.edit().putString(KEY, arr.toString()).apply()

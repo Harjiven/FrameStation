@@ -12,12 +12,16 @@ import com.xrworkspace.app.model.AudioSettings
 import com.xrworkspace.app.model.AudioSettingsManager
 import com.xrworkspace.app.model.Bookmark
 import com.xrworkspace.app.model.BookmarkManager
+import com.xrworkspace.app.model.CurvedPanelSettings
+import com.xrworkspace.app.model.CurvedPanelSettingsManager
 import com.xrworkspace.app.model.HostConfig
 import com.xrworkspace.app.model.HostConfigManager
 import com.xrworkspace.app.model.MonitorInfo
 import com.xrworkspace.app.model.ServerApp
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.model.StreamSettingsManager
+import com.xrworkspace.app.model.WorkspaceLayout
+import com.xrworkspace.app.model.WorkspaceLayoutManager
 import com.xrworkspace.app.streaming.DiscoveredHost
 import com.xrworkspace.app.streaming.DiscoveryManager
 import com.xrworkspace.app.streaming.ServerManager
@@ -81,6 +85,11 @@ data class WorkspaceUiState(
     val monitorError: String? = null,
     val sunshineUsername: String = "",
     val sunshinePassword: String = "",
+    // Curved panel rendering
+    val curvedPanelSettings: CurvedPanelSettings = CurvedPanelSettings(),
+    // Workspace layout presets
+    val layoutPresets: List<WorkspaceLayout> = emptyList(),
+    val showLayoutPresets: Boolean = false,
 )
 
 class WorkspaceViewModel(application: Application) : AndroidViewModel(application) {
@@ -89,6 +98,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     private val streamSettingsManager = StreamSettingsManager(sharedPreferences)
     private val audioSettingsManager = AudioSettingsManager(sharedPreferences)
     private val hostConfigManager = HostConfigManager(sharedPreferences)
+    private val curvedPanelSettingsManager = CurvedPanelSettingsManager(sharedPreferences)
+    private val workspaceLayoutManager = WorkspaceLayoutManager(sharedPreferences)
 
     private val discoveryManager = DiscoveryManager(application)
     private val wolManager = WolManager()
@@ -101,6 +112,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         val validOpenIds = savedOpenIds.filter { id -> bookmarks.any { it.id == id } }.toSet()
         val streamSettings = streamSettingsManager.loadStreamSettings()
         val audioSettings = audioSettingsManager.loadAudioSettings()
+        val curvedPanelSettings = curvedPanelSettingsManager.loadCurvedPanelSettings()
+        val layoutPresets = workspaceLayoutManager.loadLayouts()
 
         // Migrate single-server config to multi-host on first run
         var hostConfigs = hostConfigManager.loadHosts()
@@ -136,6 +149,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 autoReconnectEnabled = autoReconnect,
                 sunshineUsername = sunshineUsername,
                 sunshinePassword = sunshinePassword,
+                curvedPanelSettings = curvedPanelSettings,
+                layoutPresets = layoutPresets,
             )
         )
 
@@ -463,8 +478,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 activeHostId = id,
                 serverAddress = host.address,
                 macAddress = mac,
+                streamSettings = host.qualityProfile ?: state.streamSettings,
             )
         }
+        // Persist the applied stream settings so they survive app restart
+        host.qualityProfile?.let { streamSettingsManager.saveStreamSettings(it) }
     }
 
     fun updateHost(host: HostConfig) {
@@ -481,6 +499,20 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 hostConfigs = updatedHosts,
                 serverAddress = newAddress,
             )
+        }
+    }
+
+    /**
+     * Update (or clear) a host's per-host quality profile.
+     * Pass null to remove the profile.
+     */
+    fun updateHostQualityProfile(hostId: String, profile: StreamSettings?) {
+        val hosts = hostConfigManager.loadHosts()
+        val host = hosts.find { it.id == hostId } ?: return
+        hostConfigManager.updateHost(host.copy(qualityProfile = profile))
+        val updatedHosts = hostConfigManager.loadHosts()
+        _uiState.update { state ->
+            state.copy(hostConfigs = updatedHosts)
         }
     }
 
@@ -648,6 +680,76 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Curved panel rendering
+    // -----------------------------------------------------------------------
+
+    /**
+     * Update curved panel settings and persist them.
+     */
+    fun updateCurvedPanelSettings(settings: CurvedPanelSettings) {
+        curvedPanelSettingsManager.saveCurvedPanelSettings(settings)
+        _uiState.update { it.copy(curvedPanelSettings = settings) }
+    }
+
+    // -----------------------------------------------------------------------
+    // Workspace layout presets
+    // -----------------------------------------------------------------------
+
+    /**
+     * Toggle the layout presets panel open/closed.
+     */
+    fun toggleLayoutPresets() {
+        _uiState.update { it.copy(showLayoutPresets = !it.showLayoutPresets) }
+    }
+
+    /**
+     * Save the current workspace state as a named layout preset.
+     */
+    fun saveLayoutPreset(name: String) {
+        val state = _uiState.value
+        // Exclude ephemeral tab IDs — they are session-only and won't survive restart
+        val persistentOpenIds = state.openBookmarkIds.filter { id ->
+            state.bookmarks.any { it.id == id && !it.isEphemeral }
+        }.toSet()
+        val layout = WorkspaceLayout(
+            name = name,
+            showDesktopPanel = state.showDesktopPanel,
+            openBookmarkIds = persistentOpenIds,
+        )
+        workspaceLayoutManager.addLayout(layout)
+        _uiState.update { it.copy(layoutPresets = workspaceLayoutManager.loadLayouts()) }
+    }
+
+    /**
+     * Restore a previously saved layout preset.
+     * Updates which panels are visible and which bookmarks are open.
+     */
+    fun loadLayoutPreset(layout: WorkspaceLayout) {
+        val state = _uiState.value
+        // Validate that bookmark IDs still exist in the current bookmark list
+        val validIds = layout.openBookmarkIds.filter { id ->
+            state.bookmarks.any { it.id == id }
+        }.toSet()
+        _uiState.update { it.copy(
+            showDesktopPanel = layout.showDesktopPanel,
+            openBookmarkIds = validIds,
+            showLayoutPresets = false,
+        )}
+        sharedPreferences.edit()
+            .putBoolean("layout_desktop", layout.showDesktopPanel)
+            .putStringSet("open_bookmark_ids", validIds)
+            .apply()
+    }
+
+    /**
+     * Delete a saved layout preset by id.
+     */
+    fun deleteLayoutPreset(id: String) {
+        workspaceLayoutManager.removeLayout(id)
+        _uiState.update { it.copy(layoutPresets = workspaceLayoutManager.loadLayouts()) }
     }
 
     companion object {

@@ -14,4 +14,5 @@ data class HostConfig(
     val gpuType: String? = null,
     val certFileName: String? = null,
     val lastConnected: Long = 0L,
+    val qualityProfile: StreamSettings? = null,
 )

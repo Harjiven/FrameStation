@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -47,6 +48,7 @@ fun WorkspaceToolbar(
     onBookmarksClick: () -> Unit,
     onPairingClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onPresetsClick: () -> Unit = {},
     onHostsClick: () -> Unit = {},
     onDiscoverClick: () -> Unit = {},
     isDiscoveryActive: Boolean = false,
@@ -192,6 +194,13 @@ fun WorkspaceToolbar(
                 onClick = onBookmarksClick,
                 label = {
                     Icon(Icons.Default.Star, contentDescription = "Bookmarks", modifier = Modifier.size(18.dp))
+                },
+            )
+            FilterChip(
+                selected = false,
+                onClick = onPresetsClick,
+                label = {
+                    Icon(Icons.AutoMirrored.Filled.ViewQuilt, contentDescription = "Layout Presets", modifier = Modifier.size(18.dp))
                 },
             )
             FilterChip(

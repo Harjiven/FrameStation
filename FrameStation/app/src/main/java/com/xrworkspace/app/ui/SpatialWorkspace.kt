@@ -24,26 +24,30 @@ import androidx.xr.compose.spatial.Subspace
 import androidx.xr.compose.subspace.MovePolicy
 import androidx.xr.compose.subspace.ResizePolicy
 import androidx.xr.compose.subspace.SpatialColumn
+import androidx.xr.compose.subspace.SpatialCurvedRow
 import androidx.xr.compose.subspace.SpatialPanel
 import androidx.xr.compose.subspace.SpatialRow
 import androidx.xr.compose.subspace.layout.SubspaceModifier
 import androidx.xr.compose.subspace.layout.alpha
 import androidx.xr.compose.subspace.layout.height
-import androidx.xr.compose.subspace.layout.padding
 import androidx.xr.compose.subspace.layout.offset
+import androidx.xr.compose.subspace.layout.padding
 import androidx.xr.compose.subspace.layout.width
 import com.xrworkspace.app.model.AudioMode
 import com.xrworkspace.app.model.AudioSettings
 import com.xrworkspace.app.model.Bookmark
+import com.xrworkspace.app.model.CurvedPanelSettings
 import com.xrworkspace.app.model.HostConfig
 import com.xrworkspace.app.model.ServerApp
 import com.xrworkspace.app.model.StreamSettings
+import com.xrworkspace.app.model.WorkspaceLayout
 import com.xrworkspace.app.streaming.DiscoveredHost
 import com.xrworkspace.app.ui.components.AboutDialog
 import com.xrworkspace.app.ui.components.AppSelectorPanel
 import com.xrworkspace.app.ui.components.BookmarkManagerPanel
 import com.xrworkspace.app.ui.components.DiscoveryPanel
 import com.xrworkspace.app.ui.components.HostManagerPanel
+import com.xrworkspace.app.ui.components.LayoutPresetsPanel
 import com.xrworkspace.app.ui.components.MonitorPickerPanel
 import com.xrworkspace.app.ui.components.PairingPanel
 import com.xrworkspace.app.ui.components.SettingsPanel
@@ -91,6 +95,13 @@ fun SpatialWorkspace(
     onFetchMonitors: () -> Unit = {},
     onSelectMonitor: (com.xrworkspace.app.model.MonitorInfo) -> Unit = {},
     onSunshineCredentialsChanged: (String, String) -> Unit = { _, _ -> },
+    onUpdateHostProfile: (hostId: String, profile: StreamSettings?) -> Unit = { _, _ -> },
+    onUpdateCurvedPanelSettings: (CurvedPanelSettings) -> Unit = {},
+    onToggleLayoutPresets: () -> Unit = {},
+    onSaveLayoutPreset: (String) -> Unit = {},
+    onLoadLayoutPreset: (WorkspaceLayout) -> Unit = {},
+    onDeleteLayoutPreset: (String) -> Unit = {},
+    onPresetsClick: () -> Unit = {},
     dataDir: File,
 ) {
     val animatedAlpha = remember { Animatable(0.5f) }
@@ -131,12 +142,14 @@ fun SpatialWorkspace(
                     currentAudioSettings = uiState.audioSettings,
                     currentAutoReconnect = uiState.autoReconnectEnabled,
                     activeHost = uiState.hostConfigs.find { it.id == uiState.activeHostId },
-                    onSave = { ip, mac, streamSettings, audioSettings, autoReconnect ->
+                    currentCurvedPanelSettings = uiState.curvedPanelSettings,
+                    onSave = { ip, mac, streamSettings, audioSettings, autoReconnect, curvedPanelSettings ->
                         onUpdateServerAddress(ip)
                         onUpdateMacAddress(mac)
                         onUpdateStreamSettings(streamSettings)
                         onUpdateAudioSettings(audioSettings)
                         onUpdateAutoReconnect(autoReconnect)
+                        onUpdateCurvedPanelSettings(curvedPanelSettings)
                         showSettings.value = false
                     },
                     onDismiss = { showSettings.value = false },
@@ -225,6 +238,7 @@ fun SpatialWorkspace(
                     onAddHost = onAddHost,
                     onRemoveHost = onRemoveHost,
                     onDismiss = onToggleHostManager,
+                    onUpdateHostProfile = onUpdateHostProfile,
                 )
             }
         }
@@ -294,6 +308,25 @@ fun SpatialWorkspace(
                     onFetchMonitors = onFetchMonitors,
                     onSelectMonitor = onSelectMonitor,
                     onDismiss = onToggleMonitorPicker,
+                )
+            }
+        }
+
+        // Layout presets popup — separate SpatialPanel floating in front
+        if (uiState.showLayoutPresets) {
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .width(600.dp)
+                    .height(500.dp)
+                    .offset(z = 100.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
+            ) {
+                LayoutPresetsPanel(
+                    layouts = uiState.layoutPresets,
+                    onLoadPreset = onLoadLayoutPreset,
+                    onDeletePreset = onDeleteLayoutPreset,
+                    onSavePreset = onSaveLayoutPreset,
+                    onDismiss = onToggleLayoutPresets,
                 )
             }
         }
@@ -376,32 +409,63 @@ fun SpatialWorkspace(
                     onStopStream = { streamController.stopStream() },
                     onShowKeyboard = { streamController.showKeyboard() },
                     onSwitchMonitor = onToggleMonitorPicker,
+                    onPresetsClick = onPresetsClick,
                 )
             }
         }
 
-        // Dynamic bookmark panels — each is an independent SpatialPanel with explicit offset
-        // Positioned to the right of the main panel, stacked in columns of 2
-        openBookmarks.forEachIndexed { index, bookmark ->
-            val column = index / 2   // which column (0, 1, 2, ...)
-            val row = index % 2      // position within column (0 = top, 1 = bottom)
-            SpatialPanel(
-                modifier = SubspaceModifier
-                    .alpha(animatedAlpha.value)
-                    .width(500.dp)
-                    .height(430.dp)
-                    .offset(
-                        x = (980 + column * 520).dp,  // 980dp right of center (clears 1400dp main panel edge + gap) + 520dp per additional column
-                        y = (if (row == 0) 220 else -220).dp, // top half or bottom half
-                    ),
-                dragPolicy = MovePolicy(isEnabled = true),
-                resizePolicy = ResizePolicy(isEnabled = true),
+        // Dynamic bookmark panels — flat grid or native cylindrical arc via SpatialCurvedRow
+        val curvedSettings = uiState.curvedPanelSettings
+        if (curvedSettings.isEnabled && openBookmarks.size > 1) {
+            // Native curved arc: SpatialCurvedRow handles all arc math and panel rotation
+            SpatialCurvedRow(
+                modifier = SubspaceModifier.offset(x = 980.dp),
+                curveRadius = curvedSettings.radiusDp.dp,
             ) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    BookmarkWebViewPanel(
-                        bookmark = bookmark,
-                        onClose = { onToggleBookmark(bookmark.id) },
-                    )
+                openBookmarks.forEach { bookmark ->
+                    SpatialPanel(
+                        modifier = SubspaceModifier
+                            .alpha(animatedAlpha.value)
+                            .width(500.dp)
+                            .height(430.dp),
+                        dragPolicy = MovePolicy(isEnabled = true),
+                        resizePolicy = ResizePolicy(isEnabled = true),
+                    ) {
+                        Surface(modifier = Modifier.fillMaxSize()) {
+                            BookmarkWebViewPanel(
+                                bookmark = bookmark,
+                                onClose = { onToggleBookmark(bookmark.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // Flat grid: columns of 2 panels
+            openBookmarks.forEachIndexed { index, bookmark ->
+                val column = index / 2
+                val row = index % 2
+                val xOffsetDp = (980 + column * 520).toFloat()
+                val yOffsetDp = (if (row == 0) 220 else -220).toFloat()
+
+                SpatialPanel(
+                    modifier = SubspaceModifier
+                        .alpha(animatedAlpha.value)
+                        .width(500.dp)
+                        .height(430.dp)
+                        .offset(
+                            x = xOffsetDp.dp,
+                            y = yOffsetDp.dp,
+                        ),
+                    dragPolicy = MovePolicy(isEnabled = true),
+                    resizePolicy = ResizePolicy(isEnabled = true),
+                ) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        BookmarkWebViewPanel(
+                            bookmark = bookmark,
+                            onClose = { onToggleBookmark(bookmark.id) },
+                        )
+                    }
                 }
             }
         }

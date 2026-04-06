@@ -4,6 +4,7 @@
 package com.xrworkspace.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +20,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -27,16 +34,26 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.xrworkspace.app.model.HostConfig
+import com.xrworkspace.app.model.Resolution
+import com.xrworkspace.app.model.StreamSettings
+import com.xrworkspace.app.model.VideoCodec
+import com.xrworkspace.app.model.recommendedBitrateKbps
+import kotlin.math.roundToInt
 
 @Composable
 fun HostManagerPanel(
@@ -46,10 +63,13 @@ fun HostManagerPanel(
     onAddHost: (String, String) -> Unit,
     onRemoveHost: (String) -> Unit,
     onDismiss: () -> Unit,
+    onUpdateHostProfile: (hostId: String, profile: StreamSettings?) -> Unit = { _, _ -> },
 ) {
     val newName = remember { mutableStateOf("") }
     val newAddress = remember { mutableStateOf("") }
     val confirmDeleteId = remember { mutableStateOf<String?>(null) }
+    // Host ID whose quality profile editor dialog is currently open
+    var editingProfileHostId by remember { mutableStateOf<String?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -83,107 +103,164 @@ fun HostManagerPanel(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (hostConfigs.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "No hosts configured yet.\nAdd your first host below.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                    }
+                }
                 items(hostConfigs, key = { it.id }) { host ->
                     val isActive = host.id == activeHostId
                     val isConfirmingDelete = confirmDeleteId.value == host.id
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        // Status icon
-                        Icon(
-                            imageVector = if (host.isPaired) Icons.Default.CheckCircle else Icons.Default.LinkOff,
-                            contentDescription = if (host.isPaired) "Paired" else "Not paired",
-                            modifier = Modifier.size(20.dp),
-                            tint = if (host.isPaired) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-
-                        // Host info
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = host.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            // Status icon
+                            Icon(
+                                imageVector = if (host.isPaired) Icons.Default.CheckCircle else Icons.Default.LinkOff,
+                                contentDescription = if (host.isPaired) "Paired" else "Not paired",
+                                modifier = Modifier.size(20.dp),
+                                tint = if (host.isPaired) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
+
+                            // Host info
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = host.address,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    text = host.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
-                                host.gpuType?.let { gpu ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
                                     Text(
-                                        text = gpu,
+                                        text = host.address,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    host.gpuType?.let { gpu ->
+                                        Text(
+                                            text = gpu,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                if (host.lastConnected > 0L) {
+                                    Text(
+                                        text = formatLastConnected(host.lastConnected),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     )
                                 }
                             }
-                            if (host.lastConnected > 0L) {
-                                Text(
-                                    text = formatLastConnected(host.lastConnected),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+
+                            // Select as active
+                            FilterChip(
+                                selected = isActive,
+                                onClick = { onSelectHost(host.id) },
+                                label = { Text(if (isActive) "Active" else "Select") },
+                                leadingIcon = if (isActive) {
+                                    {
+                                        Icon(
+                                            Icons.Default.Computer,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                } else null,
+                            )
+
+                            // Delete with confirmation
+                            if (isConfirmingDelete) {
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {
+                                        onRemoveHost(host.id)
+                                        confirmDeleteId.value = null
+                                    },
+                                    label = { Text("Confirm") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.error,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onError,
+                                    ),
+                                )
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { confirmDeleteId.value = null },
+                                    label = { Text("Cancel") },
+                                )
+                            } else {
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { confirmDeleteId.value = host.id },
+                                    label = { Text("Delete") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                        labelColor = MaterialTheme.colorScheme.onErrorContainer,
+                                    ),
                                 )
                             }
                         }
 
-                        // Select as active
-                        FilterChip(
-                            selected = isActive,
-                            onClick = { onSelectHost(host.id) },
-                            label = { Text(if (isActive) "Active" else "Select") },
-                            leadingIcon = if (isActive) {
-                                {
-                                    Icon(
-                                        Icons.Default.Computer,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
+                        // Quality profile row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 28.dp, top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = host.qualityProfile?.let { p ->
+                                    "Profile: ${p.resolution.label}/${p.fps}fps/${formatCodecShort(p.codec)}"
+                                } ?: "No profile",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (host.qualityProfile != null) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = { editingProfileHostId = host.id },
+                            ) {
+                                Text("Edit Profile", style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (host.qualityProfile != null) {
+                                TextButton(
+                                    onClick = { onUpdateHostProfile(host.id, null) },
+                                ) {
+                                    Text(
+                                        "Clear Profile",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
                                     )
                                 }
-                            } else null,
-                        )
-
-                        // Delete with confirmation
-                        if (isConfirmingDelete) {
-                            FilterChip(
-                                selected = true,
-                                onClick = {
-                                    onRemoveHost(host.id)
-                                    confirmDeleteId.value = null
-                                },
-                                label = { Text("Confirm") },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.error,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onError,
-                                ),
-                            )
-                            FilterChip(
-                                selected = false,
-                                onClick = { confirmDeleteId.value = null },
-                                label = { Text("Cancel") },
-                            )
-                        } else {
-                            FilterChip(
-                                selected = false,
-                                onClick = { confirmDeleteId.value = host.id },
-                                label = { Text("Delete") },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                                    labelColor = MaterialTheme.colorScheme.onErrorContainer,
-                                ),
-                            )
+                            }
                         }
                     }
                 }
@@ -233,6 +310,180 @@ fun HostManagerPanel(
                 }
             }
         }
+    }
+
+    // Quality profile editor dialog
+    editingProfileHostId?.let { hostId ->
+        val host = hostConfigs.find { it.id == hostId }
+        if (host != null) {
+            QualityProfileEditorDialog(
+                currentProfile = host.qualityProfile,
+                hostName = host.name,
+                onSave = { profile ->
+                    onUpdateHostProfile(hostId, profile)
+                    editingProfileHostId = null
+                },
+                onDismiss = { editingProfileHostId = null },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QualityProfileEditorDialog(
+    currentProfile: StreamSettings?,
+    hostName: String,
+    onSave: (StreamSettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val defaults = currentProfile ?: StreamSettings()
+    var selectedResolution by remember { mutableStateOf(defaults.resolution) }
+    var selectedFps by remember { mutableStateOf(defaults.fps) }
+    var bitrateKbps by remember { mutableFloatStateOf(defaults.bitrateKbps.toFloat()) }
+    var selectedCodec by remember { mutableStateOf(defaults.codec) }
+    var resolutionExpanded by remember { mutableStateOf(false) }
+    var codecExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Quality Profile: $hostName") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Resolution dropdown
+                ExposedDropdownMenuBox(
+                    expanded = resolutionExpanded,
+                    onExpandedChange = { resolutionExpanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = selectedResolution.label,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Resolution") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = resolutionExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = resolutionExpanded,
+                        onDismissRequest = { resolutionExpanded = false },
+                    ) {
+                        Resolution.entries.forEach { resolution ->
+                            DropdownMenuItem(
+                                text = { Text("${resolution.label} (${resolution.width}x${resolution.height})") },
+                                onClick = {
+                                    selectedResolution = resolution
+                                    resolutionExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // FPS selector
+                Text(text = "Frame Rate", style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(30, 60, 90, 120).forEach { fps ->
+                        FilterChip(
+                            selected = selectedFps == fps,
+                            onClick = { selectedFps = fps },
+                            label = { Text("$fps") },
+                        )
+                    }
+                }
+
+                // Bitrate slider
+                Text(
+                    text = "Bitrate: ${formatBitrateLabel(bitrateKbps.roundToInt())}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Slider(
+                    value = bitrateKbps,
+                    onValueChange = { bitrateKbps = it },
+                    valueRange = 1000f..100000f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextButton(
+                    onClick = {
+                        bitrateKbps = recommendedBitrateKbps(selectedResolution, selectedFps).toFloat()
+                    },
+                ) {
+                    Text("Use Recommended (${formatBitrateLabel(recommendedBitrateKbps(selectedResolution, selectedFps))})")
+                }
+
+                // Codec dropdown
+                ExposedDropdownMenuBox(
+                    expanded = codecExpanded,
+                    onExpandedChange = { codecExpanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = selectedCodec.label,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Video Codec") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = codecExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = codecExpanded,
+                        onDismissRequest = { codecExpanded = false },
+                    ) {
+                        VideoCodec.entries.forEach { codec ->
+                            DropdownMenuItem(
+                                text = { Text(codec.label) },
+                                onClick = {
+                                    selectedCodec = codec
+                                    codecExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        StreamSettings(
+                            resolution = selectedResolution,
+                            fps = selectedFps,
+                            bitrateKbps = bitrateKbps.roundToInt(),
+                            codec = selectedCodec,
+                        )
+                    )
+                },
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+private fun formatCodecShort(codec: VideoCodec): String = when (codec) {
+    VideoCodec.AUTO -> "Auto"
+    VideoCodec.H264 -> "H.264"
+    VideoCodec.H265 -> "H.265"
+}
+
+private fun formatBitrateLabel(kbps: Int): String {
+    return if (kbps >= 1000) {
+        val mbps = kbps / 1000.0
+        if (mbps == mbps.toLong().toDouble()) {
+            "${mbps.toLong()} Mbps"
+        } else {
+            "${"%.1f".format(mbps)} Mbps"
+        }
+    } else {
+        "$kbps kbps"
     }
 }
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.xrworkspace.app.model.AudioSettings
+import com.xrworkspace.app.model.CurvedPanelSettings
 import com.xrworkspace.app.model.HostConfig
 import com.xrworkspace.app.streaming.WolManager
 import com.xrworkspace.app.model.Resolution
@@ -62,7 +63,8 @@ fun SettingsPanel(
     currentAudioSettings: AudioSettings = AudioSettings(),
     currentAutoReconnect: Boolean = true,
     activeHost: HostConfig? = null,
-    onSave: (serverAddress: String, macAddress: String, streamSettings: StreamSettings, audioSettings: AudioSettings, autoReconnect: Boolean) -> Unit,
+    currentCurvedPanelSettings: CurvedPanelSettings = CurvedPanelSettings(),
+    onSave: (serverAddress: String, macAddress: String, streamSettings: StreamSettings, audioSettings: AudioSettings, autoReconnect: Boolean, curvedPanelSettings: CurvedPanelSettings) -> Unit,
     onDismiss: () -> Unit,
     onShowAbout: () -> Unit = {},
 ) {
@@ -87,6 +89,8 @@ fun SettingsPanel(
     // Dropdown expanded states
     var resolutionExpanded by remember { mutableStateOf(false) }
     var codecExpanded by remember { mutableStateOf(false) }
+    var curvedEnabled by remember { mutableStateOf(currentCurvedPanelSettings.isEnabled) }
+    var curvedRadiusDp by remember { mutableFloatStateOf(currentCurvedPanelSettings.radiusDp) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -366,6 +370,55 @@ fun SettingsPanel(
                     onAudioSettingsChanged = { audioSettingsState = it },
                 )
 
+                Spacer(modifier = Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // --- Workspace Section ---
+                Text(
+                    text = "Workspace",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Curved Panels",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = "Wrap bookmark panels along a cylindrical arc",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = curvedEnabled,
+                        onCheckedChange = { curvedEnabled = it },
+                    )
+                }
+
+                if (curvedEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Arc Radius: ${curvedRadiusDp.roundToInt()} dp",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Slider(
+                        value = curvedRadiusDp,
+                        onValueChange = { curvedRadiusDp = it },
+                        valueRange = 400f..1600f,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                }
+
                 // Bottom spacing for scroll
                 Spacer(modifier = Modifier.height(16.dp))
                 
@@ -400,7 +453,11 @@ fun SettingsPanel(
                             bitrateKbps = bitrateKbps.roundToInt(),
                             codec = selectedCodec,
                         )
-                        onSave(ipState.trim(), macState.trim(), newSettings, audioSettingsState, autoReconnectState)
+                        val newCurvedSettings = CurvedPanelSettings(
+                            isEnabled = curvedEnabled,
+                            radiusDp = curvedRadiusDp,
+                        )
+                        onSave(ipState.trim(), macState.trim(), newSettings, audioSettingsState, autoReconnectState, newCurvedSettings)
                     },
                     enabled = macError == null,
                 ) {
