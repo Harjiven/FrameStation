@@ -27,8 +27,6 @@ import androidx.xr.compose.platform.LocalSpatialCapabilities
 import androidx.xr.compose.spatial.ContentEdge
 import androidx.xr.compose.spatial.Orbiter
 import androidx.xr.compose.spatial.Subspace
-import androidx.xr.compose.subspace.layout.onSizeChanged
-import androidx.xr.compose.unit.IntVolumeSize
 import androidx.xr.compose.subspace.MovePolicy
 import androidx.xr.compose.subspace.ResizePolicy
 import androidx.xr.compose.subspace.SpatialColumn
@@ -370,16 +368,11 @@ fun SpatialWorkspace(
             modifier = SubspaceModifier
                 .alpha(animatedAlpha.value)
                 .width(1400.dp)
-                .height(900.dp)
-                .onSizeChanged { size: IntVolumeSize ->
-                    mainPanelWidthDp = size.width.toFloat()
-                    mainPanelHeightDp = size.height.toFloat()
-                },
+                .height(900.dp),
             dragPolicy = MovePolicy(isEnabled = true),
             resizePolicy = ResizePolicy(isEnabled = true),
         ) {
-            Surface(modifier = Modifier.fillMaxSize()) {
-                if (uiState.showDesktopPanel) {
+            if (uiState.showDesktopPanel) {
                     if (useNativeStreaming.value) {
                         NativeStreamPanel(
                             serverAddress = uiState.serverAddress,
@@ -410,7 +403,6 @@ fun SpatialWorkspace(
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    }
                 }
             }
 
@@ -478,27 +470,21 @@ fun SpatialWorkspace(
                     modifier = SubspaceModifier
                         .width(1400.dp)
                         .height(900.dp)
-                        .offset(x = STREAM_PANEL_OFFSET_X.dp)
-                        .onSizeChanged { size: IntVolumeSize ->
-                            streamPanelWidthDp = size.width.toFloat()
-                            streamPanelHeightDp = size.height.toFloat()
-                        },
+                        .offset(x = STREAM_PANEL_OFFSET_X.dp),
                     dragPolicy = MovePolicy(isEnabled = true),
                     resizePolicy = ResizePolicy(isEnabled = true),
                 ) {
-                    Surface(modifier = Modifier.fillMaxSize()) {
-                        NativeStreamPanel(
-                            serverAddress = host.address,
-                            streamSettings = host.qualityProfile ?: uiState.streamSettings,
-                            audioSettings = uiState.audioSettings,
-                            autoReconnectEnabled = uiState.autoReconnectEnabled,
-                            onStreamingStateChanged = {},
-                            streamController = hostController,
-                            streamServiceConnection = onGetStreamSlot(host.id),
-                            panelWidthDp = streamPanelWidthDp,
-                            panelHeightDp = streamPanelHeightDp,
-                        )
-                    }
+                    NativeStreamPanel(
+                        serverAddress = host.address,
+                        streamSettings = host.qualityProfile ?: uiState.streamSettings,
+                        audioSettings = uiState.audioSettings,
+                        autoReconnectEnabled = uiState.autoReconnectEnabled,
+                        onStreamingStateChanged = {},
+                        streamController = hostController,
+                        streamServiceConnection = onGetStreamSlot(host.id),
+                        panelWidthDp = streamPanelWidthDp,
+                        panelHeightDp = streamPanelHeightDp,
+                    )
                 }
             } else {
                 // Multiple streams: arc in SpatialCurvedRow to the left of main panel
@@ -513,27 +499,21 @@ fun SpatialWorkspace(
                         SpatialPanel(
                             modifier = SubspaceModifier
                                 .width(1200.dp)
-                                .height(750.dp)
-                                .onSizeChanged { size: IntVolumeSize ->
-                                    arcPanelWidthDp = size.width.toFloat()
-                                    arcPanelHeightDp = size.height.toFloat()
-                                },
+                                .height(750.dp),
                             dragPolicy = MovePolicy(isEnabled = true),
                             resizePolicy = ResizePolicy(isEnabled = true),
                         ) {
-                            Surface(modifier = Modifier.fillMaxSize()) {
-                                NativeStreamPanel(
-                                    serverAddress = host.address,
-                                    streamSettings = host.qualityProfile ?: uiState.streamSettings,
-                                    audioSettings = uiState.audioSettings,
-                                    autoReconnectEnabled = uiState.autoReconnectEnabled,
-                                    onStreamingStateChanged = {},
-                                    streamController = hostController,
-                                    streamServiceConnection = onGetStreamSlot(host.id),
-                                    panelWidthDp = arcPanelWidthDp,
-                                    panelHeightDp = arcPanelHeightDp,
-                                )
-                            }
+                            NativeStreamPanel(
+                                serverAddress = host.address,
+                                streamSettings = host.qualityProfile ?: uiState.streamSettings,
+                                audioSettings = uiState.audioSettings,
+                                autoReconnectEnabled = uiState.autoReconnectEnabled,
+                                onStreamingStateChanged = {},
+                                streamController = hostController,
+                                streamServiceConnection = onGetStreamSlot(host.id),
+                                panelWidthDp = arcPanelWidthDp,
+                                panelHeightDp = arcPanelHeightDp,
+                            )
                         }
                     }
                 }

@@ -9,15 +9,11 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import com.limelight.nvstream.input.ControllerPacket
 import kotlin.math.abs
-import androidx.xr.compose.subspace.SpatialExternalSurface
-import androidx.xr.compose.subspace.StereoMode
-import androidx.xr.compose.subspace.layout.InteractionPolicy
-import androidx.xr.compose.subspace.layout.SpatialInputEvent
-import androidx.xr.scenecore.InputEvent
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.limelight.nvstream.input.KeyboardPacket
@@ -365,10 +361,12 @@ fun NativeStreamPanel(
         modifier = modifier
             .fillMaxSize()
             .onKeyEvent { keyEvent ->
-                val isGamepad = keyEvent.nativeKeyEvent.source and
+                @Suppress("INVISIBLE_MEMBER")
+                val nativeEvent = keyEvent.nativeKeyEvent
+                val isGamepad = nativeEvent.source and
                     InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
                 if (!isGamepad || !isConnected) return@onKeyEvent false
-                val flag = mapGamepadKeyToFlag(keyEvent.nativeKeyEvent.keyCode)
+                val flag = mapGamepadKeyToFlag(nativeEvent.keyCode)
                 if (flag == 0) return@onKeyEvent false
                 gamepadButtons = if (keyEvent.type == KeyEventType.KeyDown) {
                     gamepadButtons or flag
@@ -379,73 +377,25 @@ fun NativeStreamPanel(
                 true
             },
     ) {
-        // SpatialExternalSurface for low-latency video rendering (bypasses AndroidView compositing)
-        SpatialExternalSurface(
-            stereoMode = StereoMode.Mono,
-            // InteractionPolicy is a constructor (not interface) in alpha10:
-            // InteractionPolicy(isEnabled, onInputEvent: (SpatialInputEvent) -> Unit)
-            interactionPolicy = InteractionPolicy(isEnabled = true) { event ->
-                    if (!isConnected) return@InteractionPolicy
-
-                    val hitPos = event.hitPosition ?: return@InteractionPolicy
-                    // hitPosition is in the same units as the panel's logical size (dp).
-                    // Use live panel dimensions so pointer accuracy survives user resize.
-                    val panelHalfW = panelWidthDp / 2f
-                    val panelHalfH = panelHeightDp / 2f
-                    val normX = ((hitPos.x + panelHalfW) / (panelHalfW * 2f)).coerceIn(0f, 1f)
-                    val normY = ((hitPos.y + panelHalfH) / (panelHalfH * 2f)).coerceIn(0f, 1f)
-                    val streamW = (streamManager?.streamWidth ?: 1920).toShort()
-                    val streamH = (streamManager?.streamHeight ?: 1080).toShort()
-                    val streamX = (normX * (streamManager?.streamWidth ?: 1920).toFloat()).toInt()
-                        .coerceIn(0, (streamManager?.streamWidth ?: 1920) - 1).toShort()
-                    val streamY = (normY * (streamManager?.streamHeight ?: 1080).toFloat()).toInt()
-                        .coerceIn(0, (streamManager?.streamHeight ?: 1080) - 1).toShort()
-
-                    // event.action is InputEvent.Action (from scenecore), not SpatialInputEvent.Action
-                    if (streamServiceConnection != null) {
-                        when (event.action) {
-                            InputEvent.Action.DOWN -> {
-                                streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
-                                streamServiceConnection.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
-                            }
-                            InputEvent.Action.MOVE ->
-                                streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
-                            InputEvent.Action.UP -> {
-                                streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
-                                streamServiceConnection.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
-                            }
-                            else -> {}
-                        }
-                    } else if (streamManager != null) {
-                        when (event.action) {
-                            InputEvent.Action.DOWN -> {
-                                streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                                streamManager.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
-                            }
-                            InputEvent.Action.MOVE ->
-                                streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                            InputEvent.Action.UP -> {
-                                streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                                streamManager.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
-                            }
-                            else -> {}
-                        }
-                    }
-            },
-        ) {
-            onSurfaceCreated { surface ->
+        // Video surface — extracted to a @SubspaceComposable so it can be called
+        // from the Subspace composition context that flows through SpatialPanel.
+        StreamVideoSurface(
+            streamManager = streamManager,
+            streamServiceConnection = streamServiceConnection,
+            isConnected = isConnected,
+            panelWidthDp = panelWidthDp,
+            panelHeightDp = panelHeightDp,
+            onSurfaceCreated = { surface ->
                 Log.i("NativeStreamPanel", "SpatialExternalSurface created")
                 surfaceRef = surface
-                // Surface is ready — stream will start when user taps "Start Stream"
-                // (or immediately if connection overlay shows and user acts)
-            }
-            onSurfaceDestroyed { _ ->
+            },
+            onSurfaceDestroyed = {
                 Log.i("NativeStreamPanel", "SpatialExternalSurface destroyed")
                 surfaceRef = null
                 streamServiceConnection?.stopStream()
                 streamManager?.stopStream()
-            }
-        }
+            },
+        )
 
         // Keyboard FAB — visible when connected
         if (isConnected) {
