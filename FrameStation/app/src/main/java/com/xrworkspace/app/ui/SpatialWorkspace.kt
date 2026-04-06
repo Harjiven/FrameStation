@@ -388,16 +388,19 @@ fun SpatialWorkspace(
             )
         }
 
-        // Main desktop UI overlay panel
-        SpatialPanel(
-            modifier = SubspaceModifier
-                .alpha(animatedAlpha.value)
-                .width(1400.dp)
-                .height(900.dp),
-            dragPolicy = MovePolicy(isEnabled = true),
-            resizePolicy = ResizePolicy(isEnabled = true),
-        ) {
-            if (uiState.showDesktopPanel) {
+        // Main desktop UI overlay panel — only shown when NOT streaming.
+        // While streaming, the video surface (StreamVideoSurface above) is the main panel
+        // and this overlay is hidden so it doesn't block input/cover the video.
+        if (!uiState.isStreaming) {
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .alpha(animatedAlpha.value)
+                    .width(1400.dp)
+                    .height(900.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
+                resizePolicy = ResizePolicy(isEnabled = true),
+            ) {
+                if (uiState.showDesktopPanel) {
                     if (useNativeStreaming.value) {
                         NativeStreamPanel(
                             serverAddress = uiState.serverAddress,
@@ -429,14 +432,25 @@ fun SpatialWorkspace(
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
                 }
             }
+        }
 
-            // Toolbar orbiter — always visible at bottom of main panel
-            Orbiter(
-                position = ContentEdge.Bottom,
-                offset = 48.dp,
-                alignment = Alignment.CenterHorizontally,
+        // Toolbar — always visible in its own free-floating SpatialPanel.
+        // Sized to just fit the toolbar (≈800x96dp), positioned below the workspace center.
+        SpatialPanel(
+            modifier = SubspaceModifier
+                .alpha(animatedAlpha.value)
+                .width(900.dp)
+                .height(112.dp)
+                .offset(y = (-540).dp), // sit below the main 1400×900 panel
+            dragPolicy = MovePolicy(isEnabled = true),
+            resizePolicy = ResizePolicy(isEnabled = false),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
             ) {
                 WorkspaceToolbar(
                     showDesktop = uiState.showDesktopPanel,
