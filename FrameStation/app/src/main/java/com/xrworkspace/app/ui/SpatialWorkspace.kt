@@ -225,8 +225,9 @@ fun SpatialWorkspace(
                     },
                     onAddressChanged = { ip -> onUpdateServerAddress(ip) },
                     onDismiss = { onTogglePairing() },
-                    onScanNetwork = onToggleDiscovery,
                     onPairingSuccess = onMarkHostPaired,
+                    discoveredHosts = uiState.discoveredHosts,
+                    isScanning = uiState.isScanning,
                     dataDir = dataDir,
                 )
             }
@@ -497,11 +498,7 @@ fun SpatialWorkspace(
                             showSettings.value = false
                             onToggleHostManager()
                         },
-                        onDiscoverClick = {
-                            showSettings.value = false
-                            onToggleDiscovery()
-                        },
-                        isDiscoveryActive = uiState.showDiscovery || uiState.isScanning,
+                        isDiscoveryActive = uiState.showPairing || uiState.isScanning,
                         activeHostName = uiState.hostConfigs.find { it.id == uiState.activeHostId }?.name,
                         hasMacAddress = uiState.macAddress.isNotBlank(),
                         wolState = uiState.wolState,

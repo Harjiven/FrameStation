@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.WifiFind
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -59,7 +60,10 @@ private enum class PairingStep {
 }
 
 /**
- * Pairing panel — user enters PC IP, checks server, pairs with PIN.
+ * Connect panel — unified entry for both network discovery and server pairing.
+ * The user sees a list of discovered hosts at the top (auto-refreshed via mDNS),
+ * can tap one to pre-fill the IP, or can manually enter an IP. The same panel
+ * walks through pairing inline.
  */
 @Composable
 fun PairingPanel(
@@ -71,6 +75,10 @@ fun PairingPanel(
     /** Called with the paired server's IP when pairing succeeds. ViewModel uses this
      *  to find the matching HostConfig by address and flip its isPaired flag. */
     onPairingSuccess: (String) -> Unit = {},
+    /** Hosts discovered via mDNS while this panel is open. */
+    discoveredHosts: List<com.xrworkspace.app.streaming.DiscoveredHost> = emptyList(),
+    /** True when network discovery scan is currently running. */
+    isScanning: Boolean = false,
     dataDir: File,
 ) {
     val scope = rememberCoroutineScope()
@@ -173,8 +181,71 @@ fun PairingPanel(
             ) {
                 when (step) {
                     PairingStep.ENTER_IP -> {
+                        // Discovered hosts list — auto-populated via mDNS while panel is open
+                        if (discoveredHosts.isNotEmpty() || isScanning) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "Discovered on Network",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (isScanning) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (discoveredHosts.isEmpty()) {
+                                Text(
+                                    text = "Searching for Apollo/Sunshine servers...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                discoveredHosts.forEach { host ->
+                                    Surface(
+                                        shape = MaterialTheme.shapes.medium,
+                                        tonalElevation = 2.dp,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 2.dp),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(host.name, style = MaterialTheme.typography.bodyMedium)
+                                                Text(
+                                                    host.address,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            Button(onClick = {
+                                                ipAddress = host.address
+                                                checkServer()
+                                            }) {
+                                                Text("Connect")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+
                         Text(
-                            text = "Enter your PC's IP address",
+                            text = "Or enter your PC's IP address",
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Spacer(modifier = Modifier.height(16.dp))
@@ -313,23 +384,6 @@ fun PairingPanel(
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                         ) {
                             Text("Check Server")
-                        }
-                        if (onScanNetwork != null) {
-                            OutlinedButton(
-                                onClick = {
-                                    onDismiss()
-                                    onScanNetwork()
-                                },
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                            ) {
-                                Icon(
-                                    Icons.Default.WifiFind,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Scan Network")
-                            }
                         }
                     }
                     PairingStep.SERVER_UNREACHABLE, PairingStep.PAIR_FAILED -> {

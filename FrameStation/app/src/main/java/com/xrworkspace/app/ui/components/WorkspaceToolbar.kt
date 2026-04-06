@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.xrworkspace.app.model.AudioMode
 import com.xrworkspace.app.model.AudioSettings
 import com.xrworkspace.app.model.Bookmark
+import com.xrworkspace.app.model.HostConfig
 import com.xrworkspace.app.viewmodel.WolState
 
 @Composable
@@ -52,7 +53,7 @@ fun WorkspaceToolbar(
     onSettingsClick: () -> Unit,
     onPresetsClick: () -> Unit = {},
     onHostsClick: () -> Unit = {},
-    onDiscoverClick: () -> Unit = {},
+    /** True while a network discovery scan is in progress (used to highlight the Connect chip). */
     isDiscoveryActive: Boolean = false,
     activeHostName: String? = null,
     hasMacAddress: Boolean = false,
@@ -66,6 +67,10 @@ fun WorkspaceToolbar(
     isPassthroughActive: Boolean = false,
     isPassthroughSupported: Boolean = false,
     onTogglePassthrough: (() -> Unit)? = null,
+    /** Hosts with active streams (for per-stream chips). */
+    activeStreamHosts: List<HostConfig> = emptyList(),
+    /** Called when user taps a stream chip — host id passed. */
+    onStopStreamHost: ((String) -> Unit)? = null,
 ) {
     Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 4.dp) {
         Row(
@@ -249,16 +254,9 @@ fun WorkspaceToolbar(
             )
             FilterChip(
                 selected = isDiscoveryActive,
-                onClick = onDiscoverClick,
-                label = {
-                    Icon(Icons.Default.WifiFind, contentDescription = "Discover", modifier = Modifier.size(18.dp))
-                },
-            )
-            FilterChip(
-                selected = false,
                 onClick = onPairingClick,
                 label = {
-                    Icon(Icons.Default.Link, contentDescription = "Pair", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Link, contentDescription = "Connect", modifier = Modifier.size(18.dp))
                 },
             )
             FilterChip(

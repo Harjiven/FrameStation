@@ -411,6 +411,17 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             val newValue = !it.showPairing
             it.withAllPanelsClosed().copy(showPairing = newValue)
         }
+        // Auto-start discovery when opening the unified Connect panel so the user
+        // immediately sees discovered hosts. Stop scanning when the panel closes.
+        if (_uiState.value.showPairing) {
+            try { discoveryManager.startDiscovery() } catch (e: Exception) {
+                Log.w(TAG, "Failed to start discovery from pairing dialog", e)
+            }
+        } else {
+            try { discoveryManager.stopDiscovery() } catch (e: Exception) {
+                Log.w(TAG, "Failed to stop discovery from pairing dialog", e)
+            }
+        }
     }
 
     fun updateStreamSettings(settings: StreamSettings) {
