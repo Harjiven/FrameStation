@@ -6,6 +6,8 @@ package com.xrworkspace.app.ui.panels
 import android.view.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
+import androidx.xr.compose.subspace.MovePolicy
+import androidx.xr.compose.subspace.ResizePolicy
 import androidx.xr.compose.subspace.SpatialExternalSurface
 import androidx.xr.compose.subspace.StereoMode
 import androidx.xr.compose.subspace.SubspaceComposable
@@ -44,6 +46,8 @@ fun StreamVideoSurface(
             .height(panelHeightDp.dp)
             .offset(z = (-1).dp),
         stereoMode = StereoMode.Mono,
+        dragPolicy = MovePolicy(isEnabled = true),
+        resizePolicy = ResizePolicy(isEnabled = true),
         interactionPolicy = InteractionPolicy(isEnabled = true) { event ->
             if (!isConnected) return@InteractionPolicy
             val hitPos = event.hitPosition ?: return@InteractionPolicy
