@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -510,7 +511,12 @@ fun SpatialWorkspace(
         // Active stream panels — one SpatialPanel per streaming host (up to 3).
         // Each stream runs in its own isolated process (:stream0/:stream1/:stream2),
         // giving each an independent copy of libmoonlight-core.so.
+        // Each multi-stream panel needs its own StreamVideoSurface so the IPC service
+        // can render to a Surface (NativeStreamPanel itself doesn't create a Surface;
+        // it depends on a sibling StreamVideoSurface to provide one).
         val activeStreamHosts = uiState.hostConfigs.filter { it.id in uiState.activeStreamHostIds }
+        // Per-host surface state, keyed by host.id so each multi-stream panel gets its own.
+        val multiStreamSurfaces = remember { mutableStateMapOf<String, android.view.Surface?>() }
         if (activeStreamHosts.isNotEmpty()) {
             // Each stream panel needs its own StreamController for toolbar integration.
             // Key on the stable Set reference, not a newly-allocated List, to avoid
@@ -518,6 +524,28 @@ fun SpatialWorkspace(
             val streamPanelControllers = remember(uiState.activeStreamHostIds) {
                 activeStreamHosts.associate { host -> host.id to StreamController() }
             }
+
+            // Render a StreamVideoSurface for each active host so each gets its own Surface.
+            // These sit at the same position as the NativeStreamPanel below for visual overlay.
+            activeStreamHosts.forEach { host ->
+                StreamVideoSurface(
+                    streamManager = null,
+                    streamServiceConnection = onGetStreamSlot(host.id),
+                    isConnected = true,  // assume connected for IPC path
+                    panelWidthDp = if (activeStreamHosts.size == 1) 1400f else 1200f,
+                    panelHeightDp = if (activeStreamHosts.size == 1) 900f else 750f,
+                    offsetYDp = 70f,
+                    onSurfaceCreated = { surface ->
+                        Log.i("SpatialWorkspace", "Multi-stream surface created for ${host.id}")
+                        multiStreamSurfaces[host.id] = surface
+                    },
+                    onSurfaceDestroyed = {
+                        Log.i("SpatialWorkspace", "Multi-stream surface destroyed for ${host.id}")
+                        multiStreamSurfaces[host.id] = null
+                    },
+                )
+            }
+
             if (activeStreamHosts.size == 1) {
                 // Single stream: flat offset to left of main panel
                 val host = activeStreamHosts.first()
@@ -542,6 +570,7 @@ fun SpatialWorkspace(
                         streamServiceConnection = onGetStreamSlot(host.id),
                         panelWidthDp = streamPanelWidthDp,
                         panelHeightDp = streamPanelHeightDp,
+                        externalSurfaceRef = multiStreamSurfaces[host.id],
                     )
                 }
             } else {
@@ -571,6 +600,7 @@ fun SpatialWorkspace(
                                 streamServiceConnection = onGetStreamSlot(host.id),
                                 panelWidthDp = arcPanelWidthDp,
                                 panelHeightDp = arcPanelHeightDp,
+                                externalSurfaceRef = multiStreamSurfaces[host.id],
                             )
                         }
                     }
