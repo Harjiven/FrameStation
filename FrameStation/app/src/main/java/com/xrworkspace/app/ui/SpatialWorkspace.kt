@@ -42,6 +42,7 @@ import com.xrworkspace.app.model.ServerApp
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.model.WorkspaceLayout
 import com.xrworkspace.app.streaming.DiscoveredHost
+import com.xrworkspace.app.streaming.StreamServiceConnection
 import com.xrworkspace.app.ui.components.AboutDialog
 import com.xrworkspace.app.ui.components.AppSelectorPanel
 import com.xrworkspace.app.ui.components.BookmarkManagerPanel
@@ -84,6 +85,7 @@ fun SpatialWorkspace(
     onToggleHostManager: () -> Unit = {},
     onOpenStream: (String) -> Unit = {},
     onCloseStream: (String) -> Unit = {},
+    onGetStreamSlot: (hostId: String) -> StreamServiceConnection? = { null },
     onAddHost: (String, String) -> Unit = { _, _ -> },
     onRemoveHost: (String) -> Unit = {},
     onSelectHost: (String) -> Unit = {},
@@ -455,6 +457,7 @@ fun SpatialWorkspace(
                             autoReconnectEnabled = uiState.autoReconnectEnabled,
                             onStreamingStateChanged = {},
                             streamController = hostController,
+                            streamServiceConnection = onGetStreamSlot(host.id),
                         )
                     }
                 }
@@ -481,6 +484,7 @@ fun SpatialWorkspace(
                                     autoReconnectEnabled = uiState.autoReconnectEnabled,
                                     onStreamingStateChanged = {},
                                     streamController = hostController,
+                                    streamServiceConnection = onGetStreamSlot(host.id),
                                 )
                             }
                         }

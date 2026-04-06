@@ -34,6 +34,7 @@ fun XRWorkspaceApp(viewModel: WorkspaceViewModel = viewModel()) {
             onToggleHostManager = viewModel::toggleHostManager,
             onOpenStream = viewModel::openStream,
             onCloseStream = viewModel::closeStream,
+            onGetStreamSlot = viewModel::getStreamSlot,
             onAddHost = viewModel::addHost,
             onRemoveHost = viewModel::removeHost,
             onSelectHost = viewModel::setActiveHost,

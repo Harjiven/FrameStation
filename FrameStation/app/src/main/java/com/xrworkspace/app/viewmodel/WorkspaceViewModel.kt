@@ -25,6 +25,7 @@ import com.xrworkspace.app.model.WorkspaceLayoutManager
 import com.xrworkspace.app.streaming.DiscoveredHost
 import com.xrworkspace.app.streaming.DiscoveryManager
 import com.xrworkspace.app.streaming.ServerManager
+import com.xrworkspace.app.streaming.StreamServiceConnection
 import com.xrworkspace.app.streaming.SunshineApiManager
 import com.xrworkspace.app.streaming.WolManager
 import kotlinx.coroutines.Dispatchers
@@ -105,6 +106,17 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val discoveryManager = DiscoveryManager(application)
     private val wolManager = WolManager()
+
+    // --- Process-isolated stream service slots ---
+    // Each slot runs in its own Android process (:stream0, :stream1), giving each
+    // an independent copy of libmoonlight-core.so with separate C globals.
+    private val streamSlots = linkedMapOf(
+        ":stream0" to StreamServiceConnection(application, ":stream0"),
+        ":stream1" to StreamServiceConnection(application, ":stream1"),
+    )
+    /** Maps hostId → processName for currently active streams. */
+    private val hostToSlot = mutableMapOf<String, String>()
+
     private val _uiState: MutableStateFlow<WorkspaceUiState>
 
     init {
@@ -204,6 +216,21 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.e(TAG, "Auto-discovery startup failed", e)
             }
+        }
+
+        // Pre-bind both stream service slots so they're ready when the user taps Stream
+        streamSlots.values.forEach { slot ->
+            slot.onServiceDied = { hostId ->
+                // If a service process crashes, remove its host from active streams
+                val affectedHost = hostToSlot.entries.find { it.value == slot.processName }?.key
+                if (affectedHost != null) {
+                    hostToSlot.remove(affectedHost)
+                    _uiState.update { state ->
+                        state.copy(activeStreamHostIds = state.activeStreamHostIds - affectedHost)
+                    }
+                }
+            }
+            slot.bind()
         }
     }
 
@@ -411,6 +438,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         super.onCleared()
         discoveryManager.stopDiscovery()
+        // Stop all active streams and unbind service connections
+        streamSlots.values.forEach { slot ->
+            try { slot.stopStream() } catch (_: Exception) {}
+            slot.unbind()
+        }
         // SunshineApiManager uses a per-call OkHttpClient with no persistent state;
         // in-flight coroutines are cancelled automatically by viewModelScope teardown.
     }
@@ -422,19 +454,25 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Open a stream panel for the given host.
-     * No-op if the host is already streaming or does not exist.
+     * Open a stream panel for the given host in an isolated service process.
+     * Assigns the host to a free slot (:stream0 or :stream1).
+     * No-op if the host is already streaming, doesn't exist, or no slots are free.
      */
     fun openStream(hostId: String) {
         _uiState.value.hostConfigs.find { it.id == hostId } ?: return
-        // MoonBridge (the native JNI layer) holds static audioRenderer/videoRenderer/
-        // connectionListener fields that are overwritten by each NvConnection instance.
-        // Until MoonBridge is refactored to be instance-aware, only one stream can be
-        // active at a time. Attempting a second stream would corrupt the first.
-        if (_uiState.value.activeStreamHostIds.isNotEmpty()) {
-            Log.w("WorkspaceViewModel", "Cannot open second stream — MoonBridge is single-instance. Stop the active stream first.")
+        if (hostId in hostToSlot) return // already streaming
+
+        // Find a free slot (not currently assigned to another host)
+        val freeSlot = streamSlots.entries
+            .firstOrNull { (name, _) -> !hostToSlot.values.contains(name) }
+        if (freeSlot == null) {
+            Log.w(TAG, "No free stream slots (max ${streamSlots.size} simultaneous streams)")
             return
         }
+
+        hostToSlot[hostId] = freeSlot.key
+        Log.i(TAG, "Assigned host $hostId to slot ${freeSlot.key}")
+
         _uiState.update { state ->
             state.copy(
                 activeStreamHostIds = state.activeStreamHostIds + hostId,
@@ -444,14 +482,23 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Close the stream panel for the given host.
+     * Close the stream panel for the given host and stop the service process stream.
      * No-op if the host is not currently streaming.
      */
     fun closeStream(hostId: String) {
+        val slotName = hostToSlot.remove(hostId)
+        slotName?.let { streamSlots[it] }?.stopStream()
         _uiState.update { state ->
             state.copy(activeStreamHostIds = state.activeStreamHostIds - hostId)
         }
     }
+
+    /**
+     * Returns the [StreamServiceConnection] assigned to [hostId], or null if not streaming.
+     * Used by NativeStreamPanel to route IPC calls to the correct service process.
+     */
+    fun getStreamSlot(hostId: String): StreamServiceConnection? =
+        hostToSlot[hostId]?.let { streamSlots[it] }
 
     fun addHost(name: String, address: String) {
         val certFileName = hostConfigManager.certFileNameForHost(

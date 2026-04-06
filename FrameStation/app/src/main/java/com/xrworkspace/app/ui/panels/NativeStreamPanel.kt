@@ -19,6 +19,7 @@ import com.xrworkspace.app.model.AudioMode
 import com.xrworkspace.app.model.AudioSettings
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.streaming.AutoReconnectManager
+import com.xrworkspace.app.streaming.StreamServiceConnection
 import com.xrworkspace.app.streaming.MoonlightStreamManager
 import com.xrworkspace.app.streaming.NetworkMonitor
 import com.xrworkspace.app.streaming.ReconnectState
@@ -47,6 +48,8 @@ fun NativeStreamPanel(
     onWakeClick: (() -> Unit)? = null,
     onStreamingStateChanged: ((Boolean) -> Unit)? = null,
     streamController: StreamController? = null,
+    /** When set, stream runs in an isolated service process. Null = local MoonlightStreamManager. */
+    streamServiceConnection: StreamServiceConnection? = null,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -89,8 +92,8 @@ fun NativeStreamPanel(
     val reconnectState by autoReconnectManager.reconnectState.collectAsState()
 
     val streamManager = remember {
-        activity?.let {
-            MoonlightStreamManager(it, prefs).apply {
+        run {
+            MoonlightStreamManager(context, prefs).apply {
                 onStageChanged = { stage -> statusText = stage }
                 onConnectionStarted = {
                     isConnected = true
@@ -152,19 +155,26 @@ fun NativeStreamPanel(
         // Cancel any pending auto-reconnect when user manually starts a stream
         autoReconnectManager.cancelReconnect()
         val surface = surfaceRef
-        if (surface != null && activity != null) {
-            isConnecting = true
-            statusText = "Connecting..."
+        if (surface == null) {
+            statusText = "Surface not ready — wait a moment and try again"
+            return
+        }
+        isConnecting = true
+        statusText = "Connecting..."
+        if (streamServiceConnection != null) {
+            // IPC path — stream runs in isolated service process
+            streamServiceConnection.startStream(serverAddress, surface, streamSettings, audioSettings)
+        } else {
+            // Local path — stream runs in-process (main desktop panel)
             streamManager?.applyStreamSettings(streamSettings)
             streamManager?.applyAudioSettings(audioSettings)
             streamManager?.startStream(serverAddress, surface, serverCert, selectedAppId)
-        } else {
-            statusText = "Surface not ready — wait a moment and try again"
         }
     }
 
     fun stopStreaming() {
         autoReconnectManager.cancelReconnect()
+        streamServiceConnection?.stopStream()
         streamManager?.stopStream()
         isConnected = false
         isConnecting = false
@@ -205,36 +215,53 @@ fun NativeStreamPanel(
             interactionPolicy = object : InteractionPolicy {
                 override val isEnabled: Boolean = true
                 override fun onInputEvent(event: SpatialInputEvent) {
-                    if (streamManager == null || !isConnected) return
+                    if (!isConnected) return
 
-                    // hitPosition is pixel offset from surface CENTER.
-                    // Convert to top-left origin, then normalize to [0,1], then scale to stream res.
-                    // Panel is 1400x900dp; treat dp as pixels for coordinate mapping purposes.
                     val hitPos = event.hitPosition ?: return
-                    val panelHalfW = 700f  // half of 1400dp panel width
-                    val panelHalfH = 450f  // half of 900dp panel height
+                    // hitPosition is pixel offset from surface CENTER.
+                    // Convert to top-left origin, normalize to [0,1], scale to stream res.
+                    // Panel size: 1400x900dp (main) or 1200x750dp (arc panel).
+                    val panelHalfW = 700f
+                    val panelHalfH = 450f
                     val normX = ((hitPos.x + panelHalfW) / (panelHalfW * 2f)).coerceIn(0f, 1f)
                     val normY = ((hitPos.y + panelHalfH) / (panelHalfH * 2f)).coerceIn(0f, 1f)
-                    val streamX = (normX * streamManager.streamWidth).toInt()
-                        .coerceIn(0, streamManager.streamWidth - 1).toShort()
-                    val streamY = (normY * streamManager.streamHeight).toInt()
-                        .coerceIn(0, streamManager.streamHeight - 1).toShort()
-                    val streamW = streamManager.streamWidth.toShort()
-                    val streamH = streamManager.streamHeight.toShort()
+                    val streamW = (streamManager?.streamWidth ?: 1920).toShort()
+                    val streamH = (streamManager?.streamHeight ?: 1080).toShort()
+                    val streamX = (normX * (streamManager?.streamWidth ?: 1920).toFloat()).toInt()
+                        .coerceIn(0, (streamManager?.streamWidth ?: 1920) - 1).toShort()
+                    val streamY = (normY * (streamManager?.streamHeight ?: 1080).toFloat()).toInt()
+                        .coerceIn(0, (streamManager?.streamHeight ?: 1080) - 1).toShort()
 
-                    when (event.action) {
-                        SpatialInputEvent.Action.DOWN -> {
-                            streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                            streamManager.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
+                    if (streamServiceConnection != null) {
+                        // IPC path — forward input to service process
+                        when (event.action) {
+                            SpatialInputEvent.Action.DOWN -> {
+                                streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
+                                streamServiceConnection.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
+                            }
+                            SpatialInputEvent.Action.MOVE ->
+                                streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
+                            SpatialInputEvent.Action.UP -> {
+                                streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
+                                streamServiceConnection.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
+                            }
+                            else -> {}
                         }
-                        SpatialInputEvent.Action.MOVE -> {
-                            streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
+                    } else if (streamManager != null) {
+                        // Local path — direct call
+                        when (event.action) {
+                            SpatialInputEvent.Action.DOWN -> {
+                                streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
+                                streamManager.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
+                            }
+                            SpatialInputEvent.Action.MOVE ->
+                                streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
+                            SpatialInputEvent.Action.UP -> {
+                                streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
+                                streamManager.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
+                            }
+                            else -> {}
                         }
-                        SpatialInputEvent.Action.UP -> {
-                            streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                            streamManager.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
-                        }
-                        else -> { /* hover / other events — no-op */ }
                     }
                 }
             },
@@ -242,10 +269,17 @@ fun NativeStreamPanel(
             onSurfaceCreated { surface ->
                 Log.i("NativeStreamPanel", "SpatialExternalSurface created")
                 surfaceRef = surface
+                // For service-backed panels, start stream immediately when surface is ready
+                if (streamServiceConnection != null) {
+                    isConnecting = true
+                    statusText = "Connecting..."
+                    streamServiceConnection.startStream(serverAddress, surface, streamSettings, audioSettings)
+                }
             }
             onSurfaceDestroyed { _ ->
                 Log.i("NativeStreamPanel", "SpatialExternalSurface destroyed")
                 surfaceRef = null
+                streamServiceConnection?.stopStream()
                 streamManager?.stopStream()
             }
         }

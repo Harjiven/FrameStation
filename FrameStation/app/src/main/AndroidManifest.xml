@@ -22,6 +22,18 @@
             android:name="android.window.PROPERTY_XR_ACTIVITY_START_MODE"
             android:value="XR_ACTIVITY_START_MODE_FULL_SPACE_MANAGED" />
 
+        <!-- Stream service processes — each runs in its own isolated process for
+             libmoonlight-core.so separation. Two simultaneous streams = two processes. -->
+        <service
+            android:name=".streaming.StreamService"
+            android:process=":stream0"
+            android:exported="false" />
+
+        <service
+            android:name=".streaming.StreamService"
+            android:process=":stream1"
+            android:exported="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

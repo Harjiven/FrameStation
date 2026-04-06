@@ -3,8 +3,10 @@
 
 package com.xrworkspace.app.streaming
 
-import android.app.Activity
+import android.content.Context
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import com.limelight.binding.PlatformBinding
@@ -32,7 +34,7 @@ import java.security.cert.X509Certificate
  * Bridges the XR UI layer and the Moonlight core library.
  */
 class MoonlightStreamManager(
-    activity: Activity,
+    context: Context,
     private val prefs: SharedPreferences,
 ) : NvConnectionListener {
     companion object {
@@ -41,8 +43,9 @@ class MoonlightStreamManager(
         private const val HTTPS_PORT = 47984   // GameStream HTTPS control port
     }
 
-    private val activityRef = WeakReference(activity)
-    private val dataDir = activity.filesDir
+    private val contextRef = WeakReference(context)
+    private val dataDir = context.filesDir
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val streamLock = Any()
 
     private var connection: NvConnection? = null
@@ -129,13 +132,13 @@ class MoonlightStreamManager(
                 try {
                     Log.i(TAG, "Starting stream to $serverAddress")
 
-                    val activity = activityRef.get() ?: run {
-                        Log.w(TAG, "Activity gone — aborting stream start")
+                    val context = contextRef.get() ?: run {
+                        Log.w(TAG, "Context gone — aborting stream start")
                         return@synchronized
                     }
 
                     // Initialize MediaCodecHelper (must be called before creating the renderer)
-                    MediaCodecHelper.initialize(activity, "")
+                    MediaCodecHelper.initialize(context, "")
 
                     // Create crypto provider
                     val cryptoProvider = PlatformBinding.getCryptoProvider(dataDir)
@@ -150,7 +153,7 @@ class MoonlightStreamManager(
 
                     // Get the app list and resolve which app to stream
                     Log.i(TAG, "Fetching app list...")
-                    activity.runOnUiThread { onStageChanged?.invoke("Fetching apps...") }
+                    mainHandler.post { onStageChanged?.invoke("Fetching apps...") }
                     val uniqueId = ServerManager.getUniqueId(prefs)
                     val nvhttp = NvHTTP(addressTuple, HTTPS_PORT, uniqueId, cert, cryptoProvider)
                     val serverInfo = nvhttp.getServerInfo(true)
@@ -167,12 +170,12 @@ class MoonlightStreamManager(
                     }
 
                     if (desktopApp == null) {
-                        Log.e(TAG, "No apps found on server!")
-                        activity.runOnUiThread {
-                            onConnectionTerminated?.invoke("No apps found on server")
-                        }
-                        return@synchronized
-                    }
+                         Log.e(TAG, "No apps found on server!")
+                         mainHandler.post {
+                             onConnectionTerminated?.invoke("No apps found on server")
+                         }
+                         return@synchronized
+                     }
                     Log.i(TAG, "Streaming app: ${desktopApp.appName} (ID: ${desktopApp.appId})")
 
                     // Map codec preference to Moonlight video format flags
@@ -229,7 +232,7 @@ class MoonlightStreamManager(
 
                     // Create video decoder/renderer
                     videoRenderer = MediaCodecDecoderRenderer(
-                        activity,
+                        context,
                         rendererPrefs,
                         object : CrashListener {
                             override fun notifyCrash(e: Exception) {
@@ -255,18 +258,18 @@ class MoonlightStreamManager(
                     // audio relative to the panel's world position, not head-locked.
                     val isMuted = audioSettings.audioMode == AudioMode.MUTED
                     Log.i(TAG, "Audio mode: ${audioSettings.audioMode.label}, channels: ${audioSettings.audioChannels.label}, fx: ${audioSettings.enableAudioFx}")
-                    audioRenderer = SpatialAudioRenderer(activity).apply {
+                    audioRenderer = SpatialAudioRenderer(context).apply {
                         this.isMuted = isMuted
                     }
 
                     // Start the connection — this drives the streaming pipeline
                     Log.i(TAG, "Starting NvConnection...")
-                    activity.runOnUiThread { onStageChanged?.invoke("Connecting...") }
+                    mainHandler.post { onStageChanged?.invoke("Connecting...") }
                     connection?.start(audioRenderer, videoRenderer, this)
 
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start stream", e)
-                    activityRef.get()?.runOnUiThread {
+                    mainHandler.post {
                         onConnectionTerminated?.invoke("Failed: ${e.message}")
                     }
                 } finally {
@@ -356,7 +359,7 @@ class MoonlightStreamManager(
 
     override fun stageStarting(stage: String) {
         Log.i(TAG, "Stage starting: $stage")
-        activityRef.get()?.runOnUiThread { onStageChanged?.invoke("Starting: $stage") }
+        mainHandler.post { onStageChanged?.invoke("Starting: $stage") }
     }
 
     override fun stageComplete(stage: String) {
@@ -365,7 +368,7 @@ class MoonlightStreamManager(
 
     override fun stageFailed(stage: String, portFlags: Int, errorCode: Int) {
         Log.e(TAG, "Stage FAILED: $stage (port=$portFlags, error=$errorCode)")
-        activityRef.get()?.runOnUiThread {
+        mainHandler.post {
             onConnectionTerminated?.invoke("Failed at stage: $stage (error $errorCode)")
         }
     }
@@ -374,14 +377,14 @@ class MoonlightStreamManager(
         Log.i(TAG, "Connection started — streaming!")
         isStreamingActive = true
         intentionalStop = false
-        activityRef.get()?.runOnUiThread { onConnectionStarted?.invoke() }
+        mainHandler.post { onConnectionStarted?.invoke() }
     }
 
     override fun connectionTerminated(errorCode: Int) {
         val wasIntentional = intentionalStop
         isStreamingActive = false
         Log.i(TAG, "Connection terminated: errorCode=$errorCode, intentional=$wasIntentional")
-        activityRef.get()?.runOnUiThread {
+        mainHandler.post {
             onConnectionTerminated?.invoke(
                 if (errorCode != 0) "Connection lost (error $errorCode)" else null,
             )
@@ -394,7 +397,7 @@ class MoonlightStreamManager(
 
     override fun displayMessage(message: String) {
         Log.i(TAG, "Display message: $message")
-        activityRef.get()?.runOnUiThread { onStageChanged?.invoke(message) }
+        mainHandler.post { onStageChanged?.invoke(message) }
     }
 
     override fun displayTransientMessage(message: String) {
