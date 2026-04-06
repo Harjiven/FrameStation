@@ -91,6 +91,7 @@ fun SpatialWorkspace(
     onUpdateServerAddress: (String) -> Unit,
     onTogglePairing: () -> Unit,
     onMarkHostPaired: (String) -> Unit = {},
+    onCloseAllPanels: () -> Unit = {},
     onStreamingStateChanged: (Boolean) -> Unit,
     onToggleHostManager: () -> Unit = {},
     onOpenStream: (String) -> Unit = {},
@@ -475,12 +476,31 @@ fun SpatialWorkspace(
                         openBookmarks = openBookmarks,
                         isStreaming = uiState.isStreaming,
                         onToggleDesktop = onToggleDesktop,
-                        onToggleBookmark = onToggleBookmark,
-                        onBookmarksClick = onToggleBookmarkManager,
-                        onPairingClick = onTogglePairing,
-                        onSettingsClick = { showSettings.value = true },
-                        onHostsClick = onToggleHostManager,
-                        onDiscoverClick = onToggleDiscovery,
+                        onToggleBookmark = { id ->
+                            showSettings.value = false
+                            onToggleBookmark(id)
+                        },
+                        onBookmarksClick = {
+                            showSettings.value = false
+                            onToggleBookmarkManager()
+                        },
+                        onPairingClick = {
+                            showSettings.value = false
+                            onTogglePairing()
+                        },
+                        onSettingsClick = {
+                            // Close any other open menu before opening settings
+                            onCloseAllPanels()
+                            showSettings.value = true
+                        },
+                        onHostsClick = {
+                            showSettings.value = false
+                            onToggleHostManager()
+                        },
+                        onDiscoverClick = {
+                            showSettings.value = false
+                            onToggleDiscovery()
+                        },
                         isDiscoveryActive = uiState.showDiscovery || uiState.isScanning,
                         activeHostName = uiState.hostConfigs.find { it.id == uiState.activeHostId }?.name,
                         hasMacAddress = uiState.macAddress.isNotBlank(),
@@ -498,8 +518,14 @@ fun SpatialWorkspace(
                         },
                         onStopStream = { streamController.stopStream() },
                         onShowKeyboard = { streamController.showKeyboard() },
-                        onSwitchMonitor = onToggleMonitorPicker,
-                        onPresetsClick = onPresetsClick,
+                        onSwitchMonitor = {
+                            showSettings.value = false
+                            onToggleMonitorPicker()
+                        },
+                        onPresetsClick = {
+                            showSettings.value = false
+                            onPresetsClick()
+                        },
                         isPassthroughActive = uiState.isPassthroughActive,
                         isPassthroughSupported = isPassthroughSupported,
                         onTogglePassthrough = onTogglePassthrough,

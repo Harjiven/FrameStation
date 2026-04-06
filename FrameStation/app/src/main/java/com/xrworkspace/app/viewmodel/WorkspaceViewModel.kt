@@ -318,8 +318,31 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         bookmarkManager.saveBookmarks(_uiState.value.bookmarks)
     }
 
+    /**
+     * Returns a [WorkspaceUiState] with all popup menu panels closed.
+     * Used by every `toggle*` panel function so opening one menu auto-closes any other.
+     * Does NOT touch `showDesktopPanel` (that's the main streaming panel, not a popup).
+     */
+    private fun WorkspaceUiState.withAllPanelsClosed(): WorkspaceUiState = copy(
+        showPairing = false,
+        showBookmarkManager = false,
+        showHostManager = false,
+        showDiscovery = false,
+        showAppSelector = false,
+        showMonitorPicker = false,
+        showLayoutPresets = false,
+    )
+
+    /** Public method for callers (e.g. Settings dialog) to close all panels. */
+    fun closeAllPanels() {
+        _uiState.update { it.withAllPanelsClosed() }
+    }
+
     fun toggleBookmarkManager() {
-        _uiState.update { it.copy(showBookmarkManager = !it.showBookmarkManager) }
+        _uiState.update {
+            val newValue = !it.showBookmarkManager
+            it.withAllPanelsClosed().copy(showBookmarkManager = newValue)
+        }
     }
 
     fun updateDesktopStreamUrl(url: String) {
@@ -384,7 +407,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun togglePairingDialog() {
-        _uiState.update { it.copy(showPairing = !it.showPairing) }
+        _uiState.update {
+            val newValue = !it.showPairing
+            it.withAllPanelsClosed().copy(showPairing = newValue)
+        }
     }
 
     fun updateStreamSettings(settings: StreamSettings) {
@@ -410,7 +436,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     // --- App selector ---
 
     fun toggleAppSelector() {
-        _uiState.update { it.copy(showAppSelector = !it.showAppSelector) }
+        _uiState.update {
+            val newValue = !it.showAppSelector
+            it.withAllPanelsClosed().copy(showAppSelector = newValue)
+        }
     }
 
     /**
@@ -473,7 +502,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleDiscoveryPanel() {
         val willShow = !_uiState.value.showDiscovery
-        _uiState.update { it.copy(showDiscovery = willShow) }
+        _uiState.update { it.withAllPanelsClosed().copy(showDiscovery = willShow) }
         if (willShow) {
             discoveryManager.startDiscovery()
         } else {
@@ -510,7 +539,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     // --- Host config management ---
 
     fun toggleHostManager() {
-        _uiState.update { it.copy(showHostManager = !it.showHostManager) }
+        _uiState.update {
+            val newValue = !it.showHostManager
+            it.withAllPanelsClosed().copy(showHostManager = newValue)
+        }
     }
 
     /**
@@ -741,7 +773,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleMonitorPicker() {
         val showing = _uiState.value.showMonitorPicker
-        _uiState.update { it.copy(showMonitorPicker = !showing) }
+        _uiState.update { it.withAllPanelsClosed().copy(showMonitorPicker = !showing) }
         if (!showing) {
             // Auto-fetch monitors when opening the panel
             fetchMonitors()
@@ -845,7 +877,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      * Toggle the layout presets panel open/closed.
      */
     fun toggleLayoutPresets() {
-        _uiState.update { it.copy(showLayoutPresets = !it.showLayoutPresets) }
+        _uiState.update {
+            val newValue = !it.showLayoutPresets
+            it.withAllPanelsClosed().copy(showLayoutPresets = newValue)
+        }
     }
 
     /** Toggle between passthrough (see-through) and virtual environment. Persisted across restarts. */
