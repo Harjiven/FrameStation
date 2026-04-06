@@ -104,6 +104,8 @@ fun NativeStreamPanel(
     panelWidthDp: Float = 1400f,
     /** Live panel height in dp — updated by SpatialWorkspace via onSizeChanged when user resizes. */
     panelHeightDp: Float = 900f,
+    /** Surface provided by StreamVideoSurface in SpatialWorkspace. */
+    externalSurfaceRef: Surface? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -114,7 +116,9 @@ fun NativeStreamPanel(
     var isConnected by remember { mutableStateOf(false) }
     var isConnecting by remember { mutableStateOf(false) }
     var hasDisconnected by remember { mutableStateOf(false) }
-    var surfaceRef by remember { mutableStateOf<Surface?>(null) }
+    var surfaceRef by remember { mutableStateOf<Surface?>(externalSurfaceRef) }
+    // Keep surfaceRef in sync with the external surface from StreamVideoSurface
+    LaunchedEffect(externalSurfaceRef) { surfaceRef = externalSurfaceRef }
     var reconnectAttemptNumber by remember { mutableIntStateOf(0) }
 
     // Gamepad state — accumulated and sent on every change

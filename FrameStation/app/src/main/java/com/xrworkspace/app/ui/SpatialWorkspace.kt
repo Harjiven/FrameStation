@@ -368,18 +368,22 @@ fun SpatialWorkspace(
         // This panel sits behind the UI overlay panel at z=-1dp.
         var mainPanelWidthDp by remember { mutableFloatStateOf(1400f) }
         var mainPanelHeightDp by remember { mutableFloatStateOf(900f) }
+        // Shared surface state — StreamVideoSurface creates it, NativeStreamPanel uses it
+        var mainSurfaceRef by remember { mutableStateOf<android.view.Surface?>(null) }
         if (uiState.showDesktopPanel && useNativeStreaming.value) {
             StreamVideoSurface(
-                streamManager = null, // managed by NativeStreamPanel internally
+                streamManager = null,
                 streamServiceConnection = null,
                 isConnected = uiState.isStreaming,
                 panelWidthDp = mainPanelWidthDp,
                 panelHeightDp = mainPanelHeightDp,
                 onSurfaceCreated = { surface ->
                     Log.i("SpatialWorkspace", "Video surface created")
+                    mainSurfaceRef = surface
                 },
                 onSurfaceDestroyed = {
                     Log.i("SpatialWorkspace", "Video surface destroyed")
+                    mainSurfaceRef = null
                 },
             )
         }
@@ -410,6 +414,7 @@ fun SpatialWorkspace(
                             streamController = streamController,
                             panelWidthDp = mainPanelWidthDp,
                             panelHeightDp = mainPanelHeightDp,
+                            externalSurfaceRef = mainSurfaceRef,
                         )
                     } else {
                         DesktopStreamPanel(streamUrl = uiState.desktopStreamUrl)
