@@ -510,6 +510,8 @@ private fun formatCodecShort(codec: VideoCodec): String = when (codec) {
     VideoCodec.AUTO -> "Auto"
     VideoCodec.H264 -> "H.264"
     VideoCodec.H265 -> "H.265"
+    VideoCodec.AV1_MAIN8 -> "AV1"
+    VideoCodec.AV1_MAIN10 -> "AV1 10-bit"
 }
 
 private fun formatBitrateLabel(kbps: Int): String {

@@ -10,12 +10,14 @@ import android.view.MotionEvent
 import android.view.Surface
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import com.limelight.nvstream.input.ControllerPacket
 import kotlin.math.abs
 import androidx.xr.compose.subspace.SpatialExternalSurface
 import androidx.xr.compose.subspace.StereoMode
 import androidx.xr.compose.subspace.layout.InteractionPolicy
 import androidx.xr.compose.subspace.layout.SpatialInputEvent
+import androidx.xr.scenecore.InputEvent
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.limelight.nvstream.input.KeyboardPacket
@@ -30,6 +32,53 @@ import com.xrworkspace.app.streaming.NetworkMonitor
 import com.xrworkspace.app.streaming.ReconnectState
 import com.xrworkspace.app.viewmodel.WolState
 import java.security.cert.X509Certificate
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.StateFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
  * Compose panel that renders native Moonlight video streaming via [SpatialExternalSurface].
@@ -121,7 +170,7 @@ fun NativeStreamPanel(
                     onStreamingStateChanged?.invoke(true)
                 }
                 onConnectionTerminated = { reason ->
-                    val wasIntentional = streamManager?.wasIntentionalStop() ?: false
+                    val wasIntentional = this.wasIntentionalStop()
                     isConnected = false
                     isConnecting = false
                     hasDisconnected = true
@@ -135,6 +184,39 @@ fun NativeStreamPanel(
                 }
             }
         }
+    }
+
+    /** Send current accumulated gamepad state to the host PC. */
+    fun sendGamepadState() {
+        if (!isConnected) return
+        val lt = (gamepadLT * 255f).toInt().coerceIn(0, 255).toByte()
+        val rt = (gamepadRT * 255f).toInt().coerceIn(0, 255).toByte()
+        val lx = (gamepadLX * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+        val ly = (-gamepadLY * 32767f).toInt().coerceIn(-32767, 32767).toShort() // Y-axis inverted
+        val rx = (gamepadRX * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+        val ry = (-gamepadRY * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+        streamServiceConnection?.sendControllerInput(gamepadButtons, lt, rt, lx, ly, rx, ry)
+            ?: streamManager?.sendControllerInput(gamepadButtons, lt, rt, lx, ly, rx, ry)
+    }
+
+    /** Map a KEYCODE_BUTTON_* keycode to its ControllerPacket flag, or 0 if unknown. */
+    fun mapGamepadKeyToFlag(keyCode: Int): Int = when (keyCode) {
+        KeyEvent.KEYCODE_BUTTON_A -> ControllerPacket.A_FLAG
+        KeyEvent.KEYCODE_BUTTON_B -> ControllerPacket.B_FLAG
+        KeyEvent.KEYCODE_BUTTON_X -> ControllerPacket.X_FLAG
+        KeyEvent.KEYCODE_BUTTON_Y -> ControllerPacket.Y_FLAG
+        KeyEvent.KEYCODE_BUTTON_L1 -> ControllerPacket.LB_FLAG
+        KeyEvent.KEYCODE_BUTTON_R1 -> ControllerPacket.RB_FLAG
+        KeyEvent.KEYCODE_BUTTON_THUMBL -> ControllerPacket.LS_CLK_FLAG
+        KeyEvent.KEYCODE_BUTTON_THUMBR -> ControllerPacket.RS_CLK_FLAG
+        KeyEvent.KEYCODE_BUTTON_START -> ControllerPacket.PLAY_FLAG
+        KeyEvent.KEYCODE_BUTTON_SELECT -> ControllerPacket.BACK_FLAG
+        KeyEvent.KEYCODE_BUTTON_MODE -> ControllerPacket.SPECIAL_BUTTON_FLAG
+        KeyEvent.KEYCODE_DPAD_UP -> ControllerPacket.UP_FLAG
+        KeyEvent.KEYCODE_DPAD_DOWN -> ControllerPacket.DOWN_FLAG
+        KeyEvent.KEYCODE_DPAD_LEFT -> ControllerPacket.LEFT_FLAG
+        KeyEvent.KEYCODE_DPAD_RIGHT -> ControllerPacket.RIGHT_FLAG
+        else -> 0
     }
 
     // Capture analog gamepad axes (sticks, triggers, d-pad hat) via onGenericMotionListener.
@@ -199,39 +281,6 @@ fun NativeStreamPanel(
             streamManager?.stopStream()
             onStreamingStateChanged?.invoke(false)
         }
-    }
-
-    /** Send current accumulated gamepad state to the host PC. */
-    fun sendGamepadState() {
-        if (!isConnected) return
-        val lt = (gamepadLT * 255f).toInt().coerceIn(0, 255).toByte()
-        val rt = (gamepadRT * 255f).toInt().coerceIn(0, 255).toByte()
-        val lx = (gamepadLX * 32767f).toInt().coerceIn(-32767, 32767).toShort()
-        val ly = (-gamepadLY * 32767f).toInt().coerceIn(-32767, 32767).toShort() // Y-axis inverted
-        val rx = (gamepadRX * 32767f).toInt().coerceIn(-32767, 32767).toShort()
-        val ry = (-gamepadRY * 32767f).toInt().coerceIn(-32767, 32767).toShort()
-        streamServiceConnection?.sendControllerInput(gamepadButtons, lt, rt, lx, ly, rx, ry)
-            ?: streamManager?.sendControllerInput(gamepadButtons, lt, rt, lx, ly, rx, ry)
-    }
-
-    /** Map a KEYCODE_BUTTON_* keycode to its ControllerPacket flag, or 0 if unknown. */
-    fun mapGamepadKeyToFlag(keyCode: Int): Int = when (keyCode) {
-        KeyEvent.KEYCODE_BUTTON_A -> ControllerPacket.A_FLAG
-        KeyEvent.KEYCODE_BUTTON_B -> ControllerPacket.B_FLAG
-        KeyEvent.KEYCODE_BUTTON_X -> ControllerPacket.X_FLAG
-        KeyEvent.KEYCODE_BUTTON_Y -> ControllerPacket.Y_FLAG
-        KeyEvent.KEYCODE_BUTTON_L1 -> ControllerPacket.LB_FLAG
-        KeyEvent.KEYCODE_BUTTON_R1 -> ControllerPacket.RB_FLAG
-        KeyEvent.KEYCODE_BUTTON_THUMBL -> ControllerPacket.LS_CLK_FLAG
-        KeyEvent.KEYCODE_BUTTON_THUMBR -> ControllerPacket.RS_CLK_FLAG
-        KeyEvent.KEYCODE_BUTTON_START -> ControllerPacket.PLAY_FLAG
-        KeyEvent.KEYCODE_BUTTON_SELECT -> ControllerPacket.BACK_FLAG
-        KeyEvent.KEYCODE_BUTTON_MODE -> ControllerPacket.SPECIAL_BUTTON_FLAG
-        KeyEvent.KEYCODE_DPAD_UP -> ControllerPacket.UP_FLAG
-        KeyEvent.KEYCODE_DPAD_DOWN -> ControllerPacket.DOWN_FLAG
-        KeyEvent.KEYCODE_DPAD_LEFT -> ControllerPacket.LEFT_FLAG
-        KeyEvent.KEYCODE_DPAD_RIGHT -> ControllerPacket.RIGHT_FLAG
-        else -> 0
     }
 
     fun startStreaming() {
@@ -333,12 +382,12 @@ fun NativeStreamPanel(
         // SpatialExternalSurface for low-latency video rendering (bypasses AndroidView compositing)
         SpatialExternalSurface(
             stereoMode = StereoMode.Mono,
-            interactionPolicy = object : InteractionPolicy {
-                override val isEnabled: Boolean = true
-                override fun onInputEvent(event: SpatialInputEvent) {
-                    if (!isConnected) return
+            // InteractionPolicy is a constructor (not interface) in alpha10:
+            // InteractionPolicy(isEnabled, onInputEvent: (SpatialInputEvent) -> Unit)
+            interactionPolicy = InteractionPolicy(isEnabled = true) { event ->
+                    if (!isConnected) return@InteractionPolicy
 
-                    val hitPos = event.hitPosition ?: return
+                    val hitPos = event.hitPosition ?: return@InteractionPolicy
                     // hitPosition is in the same units as the panel's logical size (dp).
                     // Use live panel dimensions so pointer accuracy survives user resize.
                     val panelHalfW = panelWidthDp / 2f
@@ -352,38 +401,36 @@ fun NativeStreamPanel(
                     val streamY = (normY * (streamManager?.streamHeight ?: 1080).toFloat()).toInt()
                         .coerceIn(0, (streamManager?.streamHeight ?: 1080) - 1).toShort()
 
+                    // event.action is InputEvent.Action (from scenecore), not SpatialInputEvent.Action
                     if (streamServiceConnection != null) {
-                        // IPC path — forward input to service process
                         when (event.action) {
-                            SpatialInputEvent.Action.DOWN -> {
+                            InputEvent.Action.DOWN -> {
                                 streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
                                 streamServiceConnection.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
                             }
-                            SpatialInputEvent.Action.MOVE ->
+                            InputEvent.Action.MOVE ->
                                 streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
-                            SpatialInputEvent.Action.UP -> {
+                            InputEvent.Action.UP -> {
                                 streamServiceConnection.sendMousePosition(streamX, streamY, streamW, streamH)
                                 streamServiceConnection.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
                             }
                             else -> {}
                         }
                     } else if (streamManager != null) {
-                        // Local path — direct call
                         when (event.action) {
-                            SpatialInputEvent.Action.DOWN -> {
+                            InputEvent.Action.DOWN -> {
                                 streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
                                 streamManager.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
                             }
-                            SpatialInputEvent.Action.MOVE ->
+                            InputEvent.Action.MOVE ->
                                 streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                            SpatialInputEvent.Action.UP -> {
+                            InputEvent.Action.UP -> {
                                 streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
                                 streamManager.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
                             }
                             else -> {}
                         }
                     }
-                }
             },
         ) {
             onSurfaceCreated { surface ->
@@ -512,6 +559,7 @@ fun NativeStreamPanel(
                             ReconnectState.Reconnecting -> "Reconnecting (attempt $reconnectAttemptNumber/${autoReconnectManager.maxRetries})..."
                             ReconnectState.Failed -> "Auto-reconnect failed"
                             ReconnectState.Idle -> statusText
+                            else -> statusText
                         },
                         color = Color.White,
                         style = MaterialTheme.typography.titleMedium,

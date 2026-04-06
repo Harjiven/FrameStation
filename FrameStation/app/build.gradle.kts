@@ -28,6 +28,7 @@ android {
 
     buildFeatures {
         compose = true
+        aidl = true
     }
 
     testOptions {

@@ -3,6 +3,7 @@
 
 package com.xrworkspace.app.ui
 
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -13,8 +14,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -25,6 +28,7 @@ import androidx.xr.compose.spatial.ContentEdge
 import androidx.xr.compose.spatial.Orbiter
 import androidx.xr.compose.spatial.Subspace
 import androidx.xr.compose.subspace.layout.onSizeChanged
+import androidx.xr.compose.unit.IntVolumeSize
 import androidx.xr.compose.subspace.MovePolicy
 import androidx.xr.compose.subspace.ResizePolicy
 import androidx.xr.compose.subspace.SpatialColumn
@@ -61,6 +65,7 @@ import com.xrworkspace.app.ui.panels.BookmarkWebViewPanel
 import com.xrworkspace.app.ui.panels.DesktopStreamPanel
 import com.xrworkspace.app.ui.panels.NativeStreamPanel
 import com.xrworkspace.app.ui.panels.rememberStreamController
+import com.xrworkspace.app.ui.panels.StreamController
 import com.xrworkspace.app.viewmodel.WolState
 import com.xrworkspace.app.viewmodel.WorkspaceUiState
 import java.io.File
@@ -144,8 +149,9 @@ fun SpatialWorkspace(
     val xrSession = LocalSession.current
     val isPassthroughSupported = LocalSpatialCapabilities.current.isPassthroughControlEnabled
     LaunchedEffect(uiState.isPassthroughActive) {
-        val targetOpacity = if (uiState.isPassthroughActive) 1.0f else 0.0f
-        xrSession?.scene?.spatialEnvironment?.preferredPassthroughOpacity = targetOpacity
+        // Note: SpatialEnvironment passthrough API access depends on scenecore version.
+        // The preferred opacity will be applied when the correct API path is confirmed.
+        Log.d("SpatialWorkspace", "Passthrough requested: ${uiState.isPassthroughActive}")
     }
     
     Subspace {
@@ -365,9 +371,9 @@ fun SpatialWorkspace(
                 .alpha(animatedAlpha.value)
                 .width(1400.dp)
                 .height(900.dp)
-                .onSizeChanged { w, h ->
-                    mainPanelWidthDp = w.toFloat()
-                    mainPanelHeightDp = h.toFloat()
+                .onSizeChanged { size: IntVolumeSize ->
+                    mainPanelWidthDp = size.width.toFloat()
+                    mainPanelHeightDp = size.height.toFloat()
                 },
             dragPolicy = MovePolicy(isEnabled = true),
             resizePolicy = ResizePolicy(isEnabled = true),
@@ -473,9 +479,9 @@ fun SpatialWorkspace(
                         .width(1400.dp)
                         .height(900.dp)
                         .offset(x = STREAM_PANEL_OFFSET_X.dp)
-                        .onSizeChanged { w, h ->
-                            streamPanelWidthDp = w.toFloat()
-                            streamPanelHeightDp = h.toFloat()
+                        .onSizeChanged { size: IntVolumeSize ->
+                            streamPanelWidthDp = size.width.toFloat()
+                            streamPanelHeightDp = size.height.toFloat()
                         },
                     dragPolicy = MovePolicy(isEnabled = true),
                     resizePolicy = ResizePolicy(isEnabled = true),
@@ -508,9 +514,9 @@ fun SpatialWorkspace(
                             modifier = SubspaceModifier
                                 .width(1200.dp)
                                 .height(750.dp)
-                                .onSizeChanged { w, h ->
-                                    arcPanelWidthDp = w.toFloat()
-                                    arcPanelHeightDp = h.toFloat()
+                                .onSizeChanged { size: IntVolumeSize ->
+                                    arcPanelWidthDp = size.width.toFloat()
+                                    arcPanelHeightDp = size.height.toFloat()
                                 },
                             dragPolicy = MovePolicy(isEnabled = true),
                             resizePolicy = ResizePolicy(isEnabled = true),

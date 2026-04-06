@@ -60,6 +60,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private Context context;
     private Activity activity;
+    private android.view.WindowManager windowManager;
     private MediaCodec videoDecoder;
     private Thread rendererThread;
     private boolean needsSpsBitstreamFixup, isExynos4;
@@ -300,14 +301,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.directSurface = surface;
     }
 
-    public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
+    public MediaCodecDecoderRenderer(android.content.Context context, PreferenceConfiguration prefs,
                                      CrashListener crashListener, int consecutiveCrashCount,
                                      boolean meteredData, boolean requestedHdr,
                                      String glRenderer, PerfOverlayListener perfListener) {
         //dumpDecoders();
 
-        this.context = activity;
-        this.activity = activity;
+        this.context = context;
+        this.activity = (context instanceof Activity) ? (Activity) context : null;
+        this.windowManager = (android.view.WindowManager) context.getSystemService(android.content.Context.WINDOW_SERVICE);
         this.prefs = prefs;
         this.crashListener = crashListener;
         this.consecutiveCrashCount = consecutiveCrashCount;
@@ -987,7 +989,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            frameTimeNanos -= activity.getWindowManager().getDefaultDisplay().getAppVsyncOffsetNanos();
+            android.view.WindowManager wm = (windowManager != null) ? windowManager :
+                (activity != null ? activity.getWindowManager() : null);
+            if (wm != null) {
+                frameTimeNanos -= wm.getDefaultDisplay().getAppVsyncOffsetNanos();
+            }
         }
 
         // Don't render unless a new frame is due. This prevents microstutter when streaming

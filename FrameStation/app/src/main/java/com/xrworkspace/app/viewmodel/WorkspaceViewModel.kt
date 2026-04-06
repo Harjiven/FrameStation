@@ -472,11 +472,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun openStream(hostId: String) {
         _uiState.value.hostConfigs.find { it.id == hostId } ?: return
-        if (hostId in hostToSlot) return // already streaming
+        if ((hostToSlot as Map<*, *>).containsKey(hostId)) return // already streaming
 
         // Find a free slot (not currently assigned to another host)
         val freeSlot = streamSlots.entries
-            .firstOrNull { (name, _) -> !hostToSlot.values.contains(name) }
+            .firstOrNull { (name, _) -> !hostToSlot.containsValue(name) }
         if (freeSlot == null) {
             Log.w(TAG, "No free stream slots (max ${streamSlots.size} simultaneous streams)")
             return

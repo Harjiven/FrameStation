@@ -30,7 +30,7 @@ import org.json.JSONObject
  * [Surface] obtained from SpatialExternalSurface. MediaCodec in this process renders
  * video directly to that Surface across the Binder boundary.
  */
-class StreamService : Service() {
+open class StreamService : Service() {
 
     companion object {
         private const val TAG = "FrameStation-StreamSvc"
@@ -190,7 +190,7 @@ class StreamService : Service() {
             val obj = JSONObject(json)
             StreamSettings(
                 resolution = Resolution.entries.find { it.name == obj.optString("resolution") }
-                    ?: Resolution.HD_1080,
+                    ?: Resolution.RES_1080P,
                 fps = obj.optInt("fps", 60),
                 bitrateKbps = obj.optInt("bitrateKbps", 20000),
                 codec = VideoCodec.entries.find { it.name == obj.optString("codec") }
@@ -207,7 +207,7 @@ class StreamService : Service() {
             val obj = JSONObject(json)
             AudioSettings(
                 audioMode = AudioMode.entries.find { it.name == obj.optString("audioMode") }
-                    ?: AudioMode.STEREO,
+                    ?: AudioMode.STREAM_AUDIO,
             )
         } catch (_: Exception) {
             AudioSettings()
