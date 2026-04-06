@@ -261,17 +261,19 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     }
 
     private MediaCodecInfo findAv1Decoder(PreferenceConfiguration prefs) {
-        // For now, don't use AV1 unless explicitly requested
-        if (prefs.videoFormat != PreferenceConfiguration.FormatOption.FORCE_AV1) {
-            return null;
-        }
+        // FrameStationXR: Removed the FORCE_AV1-only gate that upstream Moonlight had.
+        // The whitelist + performance-point logic below already handles the AUTO case
+        // correctly: only use AV1 when (a) the decoder is whitelisted as known-good,
+        // (b) the user explicitly forced AV1, or (c) AV1 outperforms HEVC/H.264 at the
+        // requested resolution. This allows AV1 to be selected in AUTO mode on devices
+        // with high-quality hardware AV1 decoders (e.g., Galaxy XR has c2.qti.av1.decoder.low_latency).
 
         MediaCodecInfo decoderInfo = MediaCodecHelper.findProbableSafeDecoder("video/av01", -1);
         if (decoderInfo != null) {
             if (!MediaCodecHelper.isDecoderWhitelistedForAv1(decoderInfo)) {
                 LimeLog.info("Found AV1 decoder, but it's not whitelisted - "+decoderInfo.getName());
 
-                // Force HEVC enabled if the user asked for it
+                // Force AV1 enabled if the user asked for it
                 if (prefs.videoFormat == PreferenceConfiguration.FormatOption.FORCE_AV1) {
                     LimeLog.info("Forcing AV1 enabled despite non-whitelisted decoder");
                 }
@@ -286,6 +288,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 else {
                     return null;
                 }
+            }
+            else {
+                LimeLog.info("Selected whitelisted AV1 decoder: "+decoderInfo.getName());
             }
         }
 

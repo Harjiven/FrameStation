@@ -179,19 +179,18 @@ class MoonlightStreamManager(
                     Log.i(TAG, "Streaming app: ${desktopApp.appName} (ID: ${desktopApp.appId})")
 
                     // Map codec preference to Moonlight video format flags.
-                    // IMPORTANT: AV1 is ONLY advertised in the format mask when the user
-                    // explicitly picks an AV1 codec. moonlight-core's findAv1Decoder() returns
-                    // null unless videoFormat == FORCE_AV1, so even if hardware AV1 exists,
-                    // it isn't actually selected. Advertising AV1 in AUTO mode causes the
-                    // server to negotiate AV1, then video stream setup fails because
-                    // av1Decoder is null. Only the explicit AV1 codec options enable AV1.
+                    // AV1 is advertised in AUTO mode when a hardware AV1 decoder is present.
+                    // We patched moonlight-core/MediaCodecDecoderRenderer.findAv1Decoder() to
+                    // remove its FORCE_AV1-only gate, so AUTO mode can now actually use AV1
+                    // when the decoder is whitelisted or beats HEVC on performance points.
                     val av1Supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                         hasAv1Decoder()
                     Log.i(TAG, "Codec config: streamCodec=$streamCodec av1Supported=$av1Supported sdk=${Build.VERSION.SDK_INT}")
                     var videoFormats = when (streamCodec) {
                         VideoCodec.AUTO -> {
-                            // Do NOT advertise AV1 in AUTO mode (see comment above).
-                            MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
+                            var mask = MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
+                            if (av1Supported) mask = mask or MoonBridge.VIDEO_FORMAT_AV1_MAIN8
+                            mask
                         }
                         VideoCodec.H264 -> MoonBridge.VIDEO_FORMAT_H264
                         VideoCodec.H265 -> MoonBridge.VIDEO_FORMAT_H265
