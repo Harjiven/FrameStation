@@ -476,6 +476,10 @@ class MoonlightStreamManager(
 
     override fun stageFailed(stage: String, portFlags: Int, errorCode: Int) {
         Log.e(TAG, "Stage FAILED: $stage (port=$portFlags, error=$errorCode)")
+        // Mark as intentional so auto-reconnect doesn't trigger.
+        // Stage failures during initial connection are hard errors (cert mismatch,
+        // network rejection, server-side issues) — retrying won't help.
+        intentionalStop = true
         mainHandler.post {
             onConnectionTerminated?.invoke("Failed at stage: $stage (error $errorCode)")
         }
