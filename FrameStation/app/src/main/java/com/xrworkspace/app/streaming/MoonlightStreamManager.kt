@@ -214,7 +214,14 @@ class MoonlightStreamManager(
                         .setBitrate(streamBitrate)
                         .setApp(desktopApp)
                         .setMaxPacketSize(1392)
-                        .setRemoteConfiguration(StreamConfiguration.STREAM_CFG_AUTO)
+                        // Detect local vs remote network based on server address.
+                        // NvConnection.detectServerConnectionType() is a stub that always
+                        // returns STREAM_CFG_AUTO, which causes RTSP_ERROR_MALFORMED (-2)
+                        // during video stream setup. Detect explicitly here.
+                        .setRemoteConfiguration(
+                            if (isLocalAddress(serverAddress)) StreamConfiguration.STREAM_CFG_LOCAL
+                            else StreamConfiguration.STREAM_CFG_REMOTE
+                        )
                         .setAudioConfiguration(audioConfig)
                         .setSupportedVideoFormats(finalVideoFormats)
                     if (streamHdr) {
@@ -403,6 +410,26 @@ class MoonlightStreamManager(
         Log.i(TAG, "Reconnecting to $address")
         startStream(address, surface, lastServerCert)
         return true
+    }
+
+    /**
+     * Returns true if [address] is a private/LAN IPv4 address (RFC 1918) or localhost.
+     * Used to choose STREAM_CFG_LOCAL vs STREAM_CFG_REMOTE for the streaming config,
+     * because NvConnection.detectServerConnectionType() is a non-functional stub on XR.
+     */
+    private fun isLocalAddress(address: String): Boolean {
+        // Strip port if present
+        val host = address.substringBeforeLast(':').trim()
+        // IPv4 private ranges:
+        //   10.0.0.0/8
+        //   172.16.0.0/12  (172.16.x.x - 172.31.x.x)
+        //   192.168.0.0/16
+        //   127.0.0.0/8 (loopback)
+        return host.startsWith("10.") ||
+            host.startsWith("192.168.") ||
+            host.startsWith("127.") ||
+            host == "localhost" ||
+            (host.startsWith("172.") && host.split('.').getOrNull(1)?.toIntOrNull()?.let { it in 16..31 } == true)
     }
 
     /**
