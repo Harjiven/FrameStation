@@ -376,13 +376,16 @@ fun SpatialWorkspace(
         SpatialColumn(
             modifier = SubspaceModifier.alpha(animatedAlpha.value),
         ) {
+            // StreamVideoSurface — always rendered so the Surface exists for NativeStreamPanel
+            // to call startStream() against, but visually hidden (1x1px, far behind) when not
+            // streaming. Once streaming starts, expands to full 1400x900 to take the main slot.
             if (uiState.showDesktopPanel && useNativeStreaming.value) {
                 StreamVideoSurface(
                     streamManager = null,
                     streamServiceConnection = null,
                     isConnected = uiState.isStreaming,
-                    panelWidthDp = mainPanelWidthDp,
-                    panelHeightDp = mainPanelHeightDp,
+                    panelWidthDp = if (uiState.isStreaming) mainPanelWidthDp else 1f,
+                    panelHeightDp = if (uiState.isStreaming) mainPanelHeightDp else 1f,
                     onSurfaceCreated = { surface ->
                         Log.i("SpatialWorkspace", "Video surface created")
                         mainSurfaceRef = surface
