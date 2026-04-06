@@ -370,32 +370,36 @@ fun SpatialWorkspace(
         var mainPanelHeightDp by remember { mutableFloatStateOf(900f) }
         // Shared surface state — StreamVideoSurface creates it, NativeStreamPanel uses it
         var mainSurfaceRef by remember { mutableStateOf<android.view.Surface?>(null) }
-        // Workspace column — wraps video panel + toolbar so they layout vertically
-        // and feel like a single workspace. The video panel is at top, the toolbar
-        // sits directly below it. Both move together when the column is dragged.
+        // StreamVideoSurface — rendered OUTSIDE the SpatialColumn so it doesn't take a
+        // vertical slot. Positioned to overlay the same area as the main UI panel inside
+        // the column. Always rendered at full size so the Surface exists for startStream().
+        // When NOT streaming, sits at z=-1dp behind the main UI panel. When streaming, the
+        // main UI panel hides via the column conditional and the video becomes the main
+        // visible content in that slot.
+        if (uiState.showDesktopPanel && useNativeStreaming.value) {
+            StreamVideoSurface(
+                streamManager = null,
+                streamServiceConnection = null,
+                isConnected = uiState.isStreaming,
+                panelWidthDp = mainPanelWidthDp,
+                panelHeightDp = mainPanelHeightDp,
+                onSurfaceCreated = { surface ->
+                    Log.i("SpatialWorkspace", "Video surface created")
+                    mainSurfaceRef = surface
+                },
+                onSurfaceDestroyed = {
+                    Log.i("SpatialWorkspace", "Video surface destroyed")
+                    mainSurfaceRef = null
+                },
+            )
+        }
+
+        // Workspace column — wraps the main UI panel + toolbar so they layout vertically
+        // and feel like a single workspace. When streaming, the main UI panel hides and
+        // only the toolbar remains in the column.
         SpatialColumn(
             modifier = SubspaceModifier.alpha(animatedAlpha.value),
         ) {
-            // StreamVideoSurface — always rendered so the Surface exists for NativeStreamPanel
-            // to call startStream() against, but visually hidden (1x1px, far behind) when not
-            // streaming. Once streaming starts, expands to full 1400x900 to take the main slot.
-            if (uiState.showDesktopPanel && useNativeStreaming.value) {
-                StreamVideoSurface(
-                    streamManager = null,
-                    streamServiceConnection = null,
-                    isConnected = uiState.isStreaming,
-                    panelWidthDp = if (uiState.isStreaming) mainPanelWidthDp else 1f,
-                    panelHeightDp = if (uiState.isStreaming) mainPanelHeightDp else 1f,
-                    onSurfaceCreated = { surface ->
-                        Log.i("SpatialWorkspace", "Video surface created")
-                        mainSurfaceRef = surface
-                    },
-                    onSurfaceDestroyed = {
-                        Log.i("SpatialWorkspace", "Video surface destroyed")
-                        mainSurfaceRef = null
-                    },
-                )
-            }
 
             // Main desktop UI overlay panel — only shown when NOT streaming.
             // NOTE: NativeStreamPanel's DisposableEffect.onDispose used to kill the stream
