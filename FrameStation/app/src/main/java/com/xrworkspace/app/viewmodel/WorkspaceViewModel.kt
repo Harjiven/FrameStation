@@ -25,6 +25,8 @@ import com.xrworkspace.app.model.WorkspaceLayoutManager
 import com.xrworkspace.app.streaming.DiscoveredHost
 import com.xrworkspace.app.streaming.DiscoveryManager
 import com.xrworkspace.app.streaming.ServerManager
+import com.xrworkspace.app.streaming.StreamService0
+import com.xrworkspace.app.streaming.StreamService1
 import com.xrworkspace.app.streaming.StreamServiceConnection
 import com.xrworkspace.app.streaming.SunshineApiManager
 import com.xrworkspace.app.streaming.WolManager
@@ -111,8 +113,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     // Each slot runs in its own Android process (:stream0, :stream1), giving each
     // an independent copy of libmoonlight-core.so with separate C globals.
     private val streamSlots = linkedMapOf(
-        ":stream0" to StreamServiceConnection(application, ":stream0"),
-        ":stream1" to StreamServiceConnection(application, ":stream1"),
+        ":stream0" to StreamServiceConnection(application, ":stream0", StreamService0::class.java),
+        ":stream1" to StreamServiceConnection(application, ":stream1", StreamService1::class.java),
     )
     /** Maps hostId → processName for currently active streams. Thread-safe for Binder callbacks. */
     private val hostToSlot = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -473,6 +475,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         hostToSlot[hostId] = freeSlot.key
         Log.i(TAG, "Assigned host $hostId to slot ${freeSlot.key}")
 
+        // Only close the host manager on successful slot assignment (not on failure/no-op paths)
         _uiState.update { state ->
             state.copy(
                 activeStreamHostIds = state.activeStreamHostIds + hostId,
@@ -494,11 +497,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Returns the [StreamServiceConnection] assigned to [hostId], or null if not streaming.
-     * Used by NativeStreamPanel to route IPC calls to the correct service process.
+     * Returns the [StreamServiceConnection] assigned to [hostId] if it is bound and alive,
+     * or null if not streaming or the service process hasn't connected yet.
      */
     fun getStreamSlot(hostId: String): StreamServiceConnection? =
-        hostToSlot[hostId]?.let { streamSlots[it] }
+        hostToSlot[hostId]?.let { streamSlots[it] }?.takeIf { it.isBound }
 
     fun addHost(name: String, address: String) {
         val certFileName = hostConfigManager.certFileNameForHost(

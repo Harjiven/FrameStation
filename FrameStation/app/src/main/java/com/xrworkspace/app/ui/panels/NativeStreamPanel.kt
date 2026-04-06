@@ -96,6 +96,7 @@ fun NativeStreamPanel(
                 onConnectionStarted = {
                     isConnected = true
                     isConnecting = false
+                    hasDisconnected = false  // reset so button shows "Start Stream" again after reconnect
                     statusText = "Connected"
                     autoReconnectManager.cancelReconnect()
                     onStreamingStateChanged?.invoke(true)
@@ -164,17 +165,21 @@ fun NativeStreamPanel(
             streamServiceConnection.onConnectionStarted = {
                 isConnected = true
                 isConnecting = false
+                hasDisconnected = false  // reset so button shows "Start Stream" again after reconnect
                 statusText = "Connected"
                 autoReconnectManager.cancelReconnect()
                 onStreamingStateChanged?.invoke(true)
             }
             streamServiceConnection.onConnectionTerminated = { reason ->
+                // IPC path: treat any unexpected termination as non-intentional (service has
+                // no wasIntentionalStop() equivalent yet; intentional stops go via stopStreaming())
+                val wasIntentional = !isConnected && !isConnecting  // already stopped = intentional
                 isConnected = false
                 isConnecting = false
                 hasDisconnected = true
                 statusText = reason ?: "Disconnected"
                 onStreamingStateChanged?.invoke(false)
-                if (autoReconnectEnabled) {
+                if (!wasIntentional && autoReconnectEnabled) {
                     autoReconnectManager.onStreamTerminated()
                 }
             }

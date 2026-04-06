@@ -23,14 +23,15 @@
             android:value="XR_ACTIVITY_START_MODE_FULL_SPACE_MANAGED" />
 
         <!-- Stream service processes — each runs in its own isolated process for
-             libmoonlight-core.so separation. Two simultaneous streams = two processes. -->
+             libmoonlight-core.so separation. Two simultaneous streams = two processes.
+             Distinct class names required: Android rejects duplicate android:name entries. -->
         <service
-            android:name=".streaming.StreamService"
+            android:name=".streaming.StreamService0"
             android:process=":stream0"
             android:exported="false" />
 
         <service
-            android:name=".streaming.StreamService"
+            android:name=".streaming.StreamService1"
             android:process=":stream1"
             android:exported="false" />
 

@@ -196,11 +196,13 @@ fun HostManagerPanel(
                                 } else null,
                             )
 
-                            // Stream toggle chip — only available for paired hosts
+                            // Stream toggle chip — only available for paired hosts with free slots
                             val isStreaming = host.id in activeStreamHostIds
+                            val slotsAvailable = activeStreamHostIds.size < 2
+                            val canStream = host.isPaired && (isStreaming || slotsAvailable)
                             FilterChip(
                                 selected = isStreaming,
-                                enabled = host.isPaired || isStreaming,
+                                enabled = canStream,
                                 onClick = {
                                     if (isStreaming) onStopStreamHost(host.id)
                                     else onStreamHost(host.id)
@@ -211,6 +213,21 @@ fun HostManagerPanel(
                                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 ) else FilterChipDefaults.filterChipColors(),
                             )
+                            // Explain why the chip is disabled
+                            if (!isStreaming) {
+                                val hint = when {
+                                    !host.isPaired -> "Pair this host first"
+                                    !slotsAvailable -> "Max 2 streams active"
+                                    else -> null
+                                }
+                                if (hint != null) {
+                                    Text(
+                                        text = hint,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
 
                             // Delete with confirmation
                             if (isConfirmingDelete) {

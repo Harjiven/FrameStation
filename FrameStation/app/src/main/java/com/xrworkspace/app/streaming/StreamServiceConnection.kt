@@ -36,6 +36,8 @@ class StreamServiceConnection(
     private val context: Context,
     /** ":stream0" or ":stream1" — must match android:process in manifest */
     val processName: String,
+    /** Concrete service class to bind (StreamService0 or StreamService1). */
+    private val serviceClass: Class<out StreamService>,
 ) {
     companion object {
         private const val TAG = "FrameStation-SvcConn"
@@ -102,9 +104,9 @@ class StreamServiceConnection(
     // --- Lifecycle ---
 
     fun bind() {
-        val intent = Intent(context, StreamService::class.java)
+        val intent = Intent(context, serviceClass)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        Log.i(TAG, "Binding to $processName")
+        Log.i(TAG, "Binding to $processName (${serviceClass.simpleName})")
     }
 
     fun unbind() {
@@ -130,7 +132,7 @@ class StreamServiceConnection(
         audioSettings: AudioSettings,
     ) {
         val svc = service ?: run {
-            Log.w(TAG, "startStream called but service not connected ($processName)")
+            Log.w(TAG, "startStream called but service not bound ($processName) — call bind() first")
             return
         }
         svc.startStream(

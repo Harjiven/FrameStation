@@ -26,7 +26,6 @@ import com.xrworkspace.app.model.AudioSettings
 import com.xrworkspace.app.model.ServerApp
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.model.VideoCodec
-import java.lang.ref.WeakReference
 import java.security.cert.X509Certificate
 
 /**
@@ -43,7 +42,9 @@ class MoonlightStreamManager(
         private const val HTTPS_PORT = 47984   // GameStream HTTPS control port
     }
 
-    private val contextRef = WeakReference(context)
+    // applicationContext is a process singleton — it will never be GC'd, so a strong reference is safe.
+    // WeakReference here was overly defensive and would cause spurious "Context gone" aborts.
+    private val appContext = context.applicationContext
     private val dataDir = context.filesDir
     private val mainHandler = Handler(Looper.getMainLooper())
     private val streamLock = Any()
@@ -132,10 +133,7 @@ class MoonlightStreamManager(
                 try {
                     Log.i(TAG, "Starting stream to $serverAddress")
 
-                    val context = contextRef.get() ?: run {
-                        Log.w(TAG, "Context gone — aborting stream start")
-                        return@synchronized
-                    }
+                    val context = appContext
 
                     // Initialize MediaCodecHelper (must be called before creating the renderer)
                     MediaCodecHelper.initialize(context, "")
@@ -287,8 +285,13 @@ class MoonlightStreamManager(
      * When muted, audio samples are silently discarded.
      */
     fun setMuted(muted: Boolean) {
-        audioRenderer?.isMuted = muted
-        Log.i(TAG, "Audio muted: $muted")
+        val renderer = audioRenderer
+        if (renderer != null) {
+            renderer.isMuted = muted
+            Log.i(TAG, "Audio muted: $muted")
+        } else {
+            Log.v(TAG, "setMuted($muted) — audio renderer not initialized yet")
+        }
     }
 
     fun stopStream() {

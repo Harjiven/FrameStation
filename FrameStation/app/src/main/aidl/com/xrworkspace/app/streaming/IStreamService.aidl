@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.xrworkspace.app.streaming;
 
+import android.view.Surface;
 import com.xrworkspace.app.streaming.IStreamServiceClient;
 
 /**
