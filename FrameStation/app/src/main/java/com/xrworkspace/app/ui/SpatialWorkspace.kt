@@ -362,130 +362,134 @@ fun SpatialWorkspace(
             }
         }
 
-        // Video surface panel — renders StreamVideoSurface in its own SpatialPanel
-        // because @SubspaceComposable (SpatialExternalSurface) cannot be mixed with
-        // regular Compose (Box, Text, Button) in the same composition tree.
-        // This panel sits behind the UI overlay panel at z=-1dp.
+        // Video surface + toolbar — wrapped in a SpatialColumn so they layout vertically
+        // and feel like a single workspace. The video panel sits at top, toolbar at bottom.
+        // The user drags the column as a unit (movable on the column modifier), or grabs
+        // the video panel directly (which has its own MovePolicy).
         var mainPanelWidthDp by remember { mutableFloatStateOf(1400f) }
         var mainPanelHeightDp by remember { mutableFloatStateOf(900f) }
         // Shared surface state — StreamVideoSurface creates it, NativeStreamPanel uses it
         var mainSurfaceRef by remember { mutableStateOf<android.view.Surface?>(null) }
-        if (uiState.showDesktopPanel && useNativeStreaming.value) {
-            StreamVideoSurface(
-                streamManager = null,
-                streamServiceConnection = null,
-                isConnected = uiState.isStreaming,
-                panelWidthDp = mainPanelWidthDp,
-                panelHeightDp = mainPanelHeightDp,
-                onSurfaceCreated = { surface ->
-                    Log.i("SpatialWorkspace", "Video surface created")
-                    mainSurfaceRef = surface
-                },
-                onSurfaceDestroyed = {
-                    Log.i("SpatialWorkspace", "Video surface destroyed")
-                    mainSurfaceRef = null
-                },
-            )
-        }
+        // Workspace column — wraps video panel + toolbar so they layout vertically
+        // and feel like a single workspace. The video panel is at top, the toolbar
+        // sits directly below it. Both move together when the column is dragged.
+        SpatialColumn(
+            modifier = SubspaceModifier.alpha(animatedAlpha.value),
+        ) {
+            if (uiState.showDesktopPanel && useNativeStreaming.value) {
+                StreamVideoSurface(
+                    streamManager = null,
+                    streamServiceConnection = null,
+                    isConnected = uiState.isStreaming,
+                    panelWidthDp = mainPanelWidthDp,
+                    panelHeightDp = mainPanelHeightDp,
+                    onSurfaceCreated = { surface ->
+                        Log.i("SpatialWorkspace", "Video surface created")
+                        mainSurfaceRef = surface
+                    },
+                    onSurfaceDestroyed = {
+                        Log.i("SpatialWorkspace", "Video surface destroyed")
+                        mainSurfaceRef = null
+                    },
+                )
+            }
 
-        // Main desktop UI overlay panel — only shown when NOT streaming.
-        // While streaming, the video surface (StreamVideoSurface above) is the main panel
-        // and this overlay is hidden so it doesn't block input/cover the video.
-        if (!uiState.isStreaming) {
-            SpatialPanel(
-                modifier = SubspaceModifier
-                    .alpha(animatedAlpha.value)
-                    .width(1400.dp)
-                    .height(900.dp),
-                dragPolicy = MovePolicy(isEnabled = true),
-                resizePolicy = ResizePolicy(isEnabled = true),
-            ) {
-                if (uiState.showDesktopPanel) {
-                    if (useNativeStreaming.value) {
-                        NativeStreamPanel(
-                            serverAddress = uiState.serverAddress,
-                            streamSettings = uiState.streamSettings,
-                            audioSettings = uiState.audioSettings,
-                            autoReconnectEnabled = uiState.autoReconnectEnabled,
-                            selectedAppId = uiState.selectedApp?.appId,
-                            selectedAppName = uiState.selectedApp?.appName ?: "Desktop",
-                            onAppSelectorClick = onToggleAppSelector,
-                            hasMacAddress = uiState.macAddress.isNotBlank(),
-                            wolState = uiState.wolState,
-                            onWakeClick = onSendWakeOnLan,
-                            onStreamingStateChanged = onStreamingStateChanged,
-                            streamController = streamController,
-                            panelWidthDp = mainPanelWidthDp,
-                            panelHeightDp = mainPanelHeightDp,
-                            externalSurfaceRef = mainSurfaceRef,
-                        )
+            // Main desktop UI overlay panel — only shown when NOT streaming.
+            // While streaming, the video surface above is the main panel and this
+            // overlay is hidden so it doesn't block input/cover the video.
+            if (!uiState.isStreaming) {
+                SpatialPanel(
+                    modifier = SubspaceModifier
+                        .width(1400.dp)
+                        .height(900.dp),
+                    dragPolicy = MovePolicy(isEnabled = false),
+                    resizePolicy = ResizePolicy(isEnabled = true),
+                ) {
+                    if (uiState.showDesktopPanel) {
+                        if (useNativeStreaming.value) {
+                            NativeStreamPanel(
+                                serverAddress = uiState.serverAddress,
+                                streamSettings = uiState.streamSettings,
+                                audioSettings = uiState.audioSettings,
+                                autoReconnectEnabled = uiState.autoReconnectEnabled,
+                                selectedAppId = uiState.selectedApp?.appId,
+                                selectedAppName = uiState.selectedApp?.appName ?: "Desktop",
+                                onAppSelectorClick = onToggleAppSelector,
+                                hasMacAddress = uiState.macAddress.isNotBlank(),
+                                wolState = uiState.wolState,
+                                onWakeClick = onSendWakeOnLan,
+                                onStreamingStateChanged = onStreamingStateChanged,
+                                streamController = streamController,
+                                panelWidthDp = mainPanelWidthDp,
+                                panelHeightDp = mainPanelHeightDp,
+                                externalSurfaceRef = mainSurfaceRef,
+                            )
+                        } else {
+                            DesktopStreamPanel(streamUrl = uiState.desktopStreamUrl)
+                        }
                     } else {
-                        DesktopStreamPanel(streamUrl = uiState.desktopStreamUrl)
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "No panel selected",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "No panel selected",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        // Toolbar — always visible in its own free-floating SpatialPanel.
-        // Sized to just fit the toolbar (≈800x96dp), positioned below the workspace center.
-        SpatialPanel(
-            modifier = SubspaceModifier
-                .alpha(animatedAlpha.value)
-                .width(900.dp)
-                .height(112.dp)
-                .offset(y = (-540).dp), // sit below the main 1400×900 panel
-            dragPolicy = MovePolicy(isEnabled = true),
-            resizePolicy = ResizePolicy(isEnabled = false),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
+            // Toolbar — tightly sized to its content (FilterChip Row with 16dp/8dp padding).
+            // Sits directly below the video/main panel as part of the same SpatialColumn.
+            SpatialPanel(
+                modifier = SubspaceModifier
+                    .width(720.dp)
+                    .height(80.dp),
+                dragPolicy = MovePolicy(isEnabled = false),
+                resizePolicy = ResizePolicy(isEnabled = false),
             ) {
-                WorkspaceToolbar(
-                    showDesktop = uiState.showDesktopPanel,
-                    openBookmarks = openBookmarks,
-                    isStreaming = uiState.isStreaming,
-                    onToggleDesktop = onToggleDesktop,
-                    onToggleBookmark = onToggleBookmark,
-                    onBookmarksClick = onToggleBookmarkManager,
-                    onPairingClick = onTogglePairing,
-                    onSettingsClick = { showSettings.value = true },
-                    onHostsClick = onToggleHostManager,
-                    onDiscoverClick = onToggleDiscovery,
-                    isDiscoveryActive = uiState.showDiscovery || uiState.isScanning,
-                    activeHostName = uiState.hostConfigs.find { it.id == uiState.activeHostId }?.name,
-                    hasMacAddress = uiState.macAddress.isNotBlank(),
-                    wolState = uiState.wolState,
-                    onWakeClick = onSendWakeOnLan,
-                    audioSettings = uiState.audioSettings,
-                    onToggleMute = {
-                        val current = uiState.audioSettings
-                        val toggled = if (current.audioMode == AudioMode.MUTED) {
-                            current.copy(audioMode = AudioMode.STREAM_AUDIO)
-                        } else {
-                            current.copy(audioMode = AudioMode.MUTED)
-                        }
-                        onUpdateAudioSettings(toggled)
-                    },
-                    onStopStream = { streamController.stopStream() },
-                    onShowKeyboard = { streamController.showKeyboard() },
-                    onSwitchMonitor = onToggleMonitorPicker,
-                    onPresetsClick = onPresetsClick,
-                    isPassthroughActive = uiState.isPassthroughActive,
-                    isPassthroughSupported = isPassthroughSupported,
-                    onTogglePassthrough = onTogglePassthrough,
-                )
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    WorkspaceToolbar(
+                        showDesktop = uiState.showDesktopPanel,
+                        openBookmarks = openBookmarks,
+                        isStreaming = uiState.isStreaming,
+                        onToggleDesktop = onToggleDesktop,
+                        onToggleBookmark = onToggleBookmark,
+                        onBookmarksClick = onToggleBookmarkManager,
+                        onPairingClick = onTogglePairing,
+                        onSettingsClick = { showSettings.value = true },
+                        onHostsClick = onToggleHostManager,
+                        onDiscoverClick = onToggleDiscovery,
+                        isDiscoveryActive = uiState.showDiscovery || uiState.isScanning,
+                        activeHostName = uiState.hostConfigs.find { it.id == uiState.activeHostId }?.name,
+                        hasMacAddress = uiState.macAddress.isNotBlank(),
+                        wolState = uiState.wolState,
+                        onWakeClick = onSendWakeOnLan,
+                        audioSettings = uiState.audioSettings,
+                        onToggleMute = {
+                            val current = uiState.audioSettings
+                            val toggled = if (current.audioMode == AudioMode.MUTED) {
+                                current.copy(audioMode = AudioMode.STREAM_AUDIO)
+                            } else {
+                                current.copy(audioMode = AudioMode.MUTED)
+                            }
+                            onUpdateAudioSettings(toggled)
+                        },
+                        onStopStream = { streamController.stopStream() },
+                        onShowKeyboard = { streamController.showKeyboard() },
+                        onSwitchMonitor = onToggleMonitorPicker,
+                        onPresetsClick = onPresetsClick,
+                        isPassthroughActive = uiState.isPassthroughActive,
+                        isPassthroughSupported = isPassthroughSupported,
+                        onTogglePassthrough = onTogglePassthrough,
+                    )
+                }
             }
         }
 
