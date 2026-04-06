@@ -85,6 +85,7 @@ fun SettingsPanel(
     var selectedFps by remember { mutableStateOf(currentStreamSettings.fps) }
     var bitrateKbps by remember { mutableFloatStateOf(currentStreamSettings.bitrateKbps.toFloat()) }
     var selectedCodec by remember { mutableStateOf(currentStreamSettings.codec) }
+    var enableHdr by remember { mutableStateOf(currentStreamSettings.enableHdr) }
 
     // Dropdown expanded states
     var resolutionExpanded by remember { mutableStateOf(false) }
@@ -360,6 +361,29 @@ fun SettingsPanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "HDR Streaming",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = "H.265 Main10 / AV1 Main10, BT.2020 — server must support HDR",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = enableHdr,
+                        onCheckedChange = { enableHdr = it },
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(24.dp))
@@ -452,6 +476,7 @@ fun SettingsPanel(
                             fps = selectedFps,
                             bitrateKbps = bitrateKbps.roundToInt(),
                             codec = selectedCodec,
+                            enableHdr = enableHdr,
                         )
                         val newCurvedSettings = CurvedPanelSettings(
                             isEnabled = curvedEnabled,

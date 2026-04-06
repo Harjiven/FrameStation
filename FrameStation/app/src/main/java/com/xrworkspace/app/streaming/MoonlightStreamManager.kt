@@ -5,6 +5,7 @@ package com.xrworkspace.app.streaming
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -14,6 +15,7 @@ import com.limelight.binding.video.CrashListener
 import com.limelight.binding.video.MediaCodecDecoderRenderer
 import com.limelight.binding.video.MediaCodecHelper
 import com.limelight.binding.video.PerfOverlayListener
+import com.limelight.nvstream.input.ControllerPacket
 import com.limelight.nvstream.NvConnection
 import com.limelight.nvstream.NvConnectionListener
 import com.limelight.nvstream.StreamConfiguration
@@ -66,6 +68,7 @@ class MoonlightStreamManager(
     var streamFps: Int = 60
     var streamBitrate: Int = 20000 // kbps
     var streamCodec: VideoCodec = VideoCodec.AUTO
+    var streamHdr: Boolean = false
 
     // Audio config — applied via applyAudioSettings() before starting a stream
     private var audioSettings: AudioSettings = AudioSettings()
@@ -94,6 +97,7 @@ class MoonlightStreamManager(
         streamFps = settings.fps
         streamBitrate = settings.bitrateKbps
         streamCodec = settings.codec
+        streamHdr = settings.enableHdr
     }
 
     /**
@@ -176,18 +180,36 @@ class MoonlightStreamManager(
                      }
                     Log.i(TAG, "Streaming app: ${desktopApp.appName} (ID: ${desktopApp.appId})")
 
-                    // Map codec preference to Moonlight video format flags
+                    // Map codec preference to Moonlight video format flags.
+                    // AV1 requires API 29 (Android 10) for hardware decode support.
+                    val av1Supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                     val videoFormats = when (streamCodec) {
-                        VideoCodec.AUTO -> MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
+                        VideoCodec.AUTO -> {
+                            var mask = MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
+                            if (av1Supported) mask = mask or MoonBridge.VIDEO_FORMAT_AV1_MAIN8
+                            mask
+                        }
                         VideoCodec.H264 -> MoonBridge.VIDEO_FORMAT_H264
                         VideoCodec.H265 -> MoonBridge.VIDEO_FORMAT_H265
+                        VideoCodec.AV1_MAIN8 -> if (av1Supported) MoonBridge.VIDEO_FORMAT_AV1_MAIN8
+                            else MoonBridge.VIDEO_FORMAT_H265
+                        VideoCodec.AV1_MAIN10 -> if (av1Supported) MoonBridge.VIDEO_FORMAT_AV1_MAIN10
+                            else MoonBridge.VIDEO_FORMAT_H265_MAIN10
+                    }
+
+                    // If HDR is requested, include 10-bit format variants
+                    val finalVideoFormats = if (streamHdr) {
+                        videoFormats or MoonBridge.VIDEO_FORMAT_H265_MAIN10 or
+                            (if (av1Supported) MoonBridge.VIDEO_FORMAT_AV1_MAIN10 else 0)
+                    } else {
+                        videoFormats
                     }
 
                     // Resolve audio configuration from user settings
                     val audioConfig = audioSettings.audioChannels.toMoonBridgeConfig()
 
                     // Build stream configuration WITH the app
-                    val streamConfig = StreamConfiguration.Builder()
+                    val streamConfigBuilder = StreamConfiguration.Builder()
                         .setResolution(streamWidth, streamHeight)
                         .setRefreshRate(streamFps)
                         .setLaunchRefreshRate(streamFps)
@@ -196,8 +218,11 @@ class MoonlightStreamManager(
                         .setMaxPacketSize(1392)
                         .setRemoteConfiguration(StreamConfiguration.STREAM_CFG_AUTO)
                         .setAudioConfiguration(audioConfig)
-                        .setSupportedVideoFormats(videoFormats)
-                        .build()
+                        .setSupportedVideoFormats(finalVideoFormats)
+                    if (streamHdr) {
+                        streamConfigBuilder.setColorSpace(MoonBridge.COLORSPACE_REC_2020)
+                    }
+                    val streamConfig = streamConfigBuilder.build()
 
                     // Create connection
                     connection = NvConnection(
@@ -219,9 +244,12 @@ class MoonlightStreamManager(
                             VideoCodec.AUTO -> PreferenceConfiguration.FormatOption.AUTO
                             VideoCodec.H264 -> PreferenceConfiguration.FormatOption.FORCE_H264
                             VideoCodec.H265 -> PreferenceConfiguration.FormatOption.FORCE_HEVC
+                            VideoCodec.AV1_MAIN8, VideoCodec.AV1_MAIN10 ->
+                                if (av1Supported) PreferenceConfiguration.FormatOption.FORCE_AV1
+                                else PreferenceConfiguration.FormatOption.FORCE_HEVC
                         }
                         framePacing = PreferenceConfiguration.FRAME_PACING_BALANCED
-                        enableHdr = false
+                        enableHdr = streamHdr
                         enablePerfOverlay = false
                         absoluteMouseMode = true
                         audioConfiguration = audioConfig
@@ -278,6 +306,39 @@ class MoonlightStreamManager(
         thread.name = "FrameStation-StreamThread"
         streamThread = thread
         thread.start()
+    }
+
+    /**
+     * Forward gamepad state to the host PC.
+     *
+     * @param buttonFlags Bitmask of pressed buttons using [ControllerPacket] flag constants.
+     * @param leftTrigger Left trigger pressure (0–255).
+     * @param rightTrigger Right trigger pressure (0–255).
+     * @param leftStickX Left stick horizontal (-32767 left, 32767 right).
+     * @param leftStickY Left stick vertical (-32767 up, 32767 down in Moonlight convention).
+     * @param rightStickX Right stick horizontal.
+     * @param rightStickY Right stick vertical.
+     */
+    fun sendControllerInput(
+        buttonFlags: Int,
+        leftTrigger: Byte,
+        rightTrigger: Byte,
+        leftStickX: Short,
+        leftStickY: Short,
+        rightStickX: Short,
+        rightStickY: Short,
+    ) {
+        connection?.sendControllerInput(
+            /* controllerNumber = */ 0,
+            /* activeGamepadMask = */ 1,
+            buttonFlags,
+            leftTrigger,
+            rightTrigger,
+            leftStickX,
+            leftStickY,
+            rightStickX,
+            rightStickY,
+        )
     }
 
     /**
@@ -409,7 +470,9 @@ class MoonlightStreamManager(
 
     override fun rumble(controllerNumber: Short, lowFreqMotor: Short, highFreqMotor: Short) {}
     override fun rumbleTriggers(controllerNumber: Short, leftTrigger: Short, rightTrigger: Short) {}
-    override fun setHdrMode(enabled: Boolean, hdrMetadata: ByteArray?) {}
+    override fun setHdrMode(enabled: Boolean, hdrMetadata: ByteArray?) {
+        Log.i(TAG, "HDR mode: enabled=$enabled, metadata=${hdrMetadata?.size ?: 0} bytes")
+    }
     override fun setMotionEventState(controllerNumber: Short, motionType: Byte, reportRateHz: Short) {}
     override fun setControllerLED(controllerNumber: Short, r: Byte, g: Byte, b: Byte) {}
 }

@@ -27,6 +27,17 @@ interface IStreamService {
     void sendMouseScroll(int amount);
     void sendKeyboardInput(int keyMap, int direction, int modifiers);
 
+    /** Forward gamepad state to the host PC. buttonFlags uses ControllerPacket flag constants. */
+    void sendControllerInput(
+        int buttonFlags,
+        int leftTrigger,
+        int rightTrigger,
+        int leftStickX,
+        int leftStickY,
+        int rightStickX,
+        int rightStickY
+    );
+
     /** Register callback. Call immediately after binding. */
     void registerClient(IStreamServiceClient client);
     void unregisterClient(IStreamServiceClient client);

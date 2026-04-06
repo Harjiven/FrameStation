@@ -169,6 +169,26 @@ class StreamServiceConnection(
         service?.sendKeyboardInput(keyMap.toInt(), direction.toInt(), modifiers.toInt())
     }
 
+    fun sendControllerInput(
+        buttonFlags: Int,
+        leftTrigger: Byte,
+        rightTrigger: Byte,
+        leftStickX: Short,
+        leftStickY: Short,
+        rightStickX: Short,
+        rightStickY: Short,
+    ) {
+        service?.sendControllerInput(
+            buttonFlags,
+            leftTrigger.toInt(),
+            rightTrigger.toInt(),
+            leftStickX.toInt(),
+            leftStickY.toInt(),
+            rightStickX.toInt(),
+            rightStickY.toInt(),
+        )
+    }
+
     // --- JSON serializers ---
 
     private fun serializeStreamSettings(s: StreamSettings): String =
@@ -177,6 +197,7 @@ class StreamServiceConnection(
             put("fps", s.fps)
             put("bitrateKbps", s.bitrateKbps)
             put("codec", s.codec.name)
+            put("enableHdr", s.enableHdr)
         }.toString()
 
     private fun serializeAudioSettings(a: AudioSettings): String =

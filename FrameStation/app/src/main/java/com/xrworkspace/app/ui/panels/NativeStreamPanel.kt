@@ -4,8 +4,13 @@
 package com.xrworkspace.app.ui.panels
 
 import android.util.Log
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.Surface
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import com.limelight.nvstream.input.ControllerPacket
 import androidx.xr.compose.subspace.SpatialExternalSurface
 import androidx.xr.compose.subspace.StereoMode
 import androidx.xr.compose.subspace.layout.InteractionPolicy
@@ -61,6 +66,15 @@ fun NativeStreamPanel(
     var hasDisconnected by remember { mutableStateOf(false) }
     var surfaceRef by remember { mutableStateOf<Surface?>(null) }
     var reconnectAttemptNumber by remember { mutableIntStateOf(0) }
+
+    // Gamepad state — accumulated and sent on every change
+    var gamepadButtons by remember { mutableIntStateOf(0) }
+    var gamepadLT by remember { mutableStateOf(0f) }
+    var gamepadRT by remember { mutableStateOf(0f) }
+    var gamepadLX by remember { mutableStateOf(0f) }
+    var gamepadLY by remember { mutableStateOf(0f) }
+    var gamepadRX by remember { mutableStateOf(0f) }
+    var gamepadRY by remember { mutableStateOf(0f) }
 
     // Network monitor — tracks Wi-Fi connectivity state
     val networkMonitor = remember { NetworkMonitor(context) }
@@ -118,6 +132,36 @@ fun NativeStreamPanel(
         }
     }
 
+    // Capture analog gamepad axes (sticks, triggers, d-pad hat) via onGenericMotionListener
+    val localView = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(localView, isConnected) {
+        val listener = android.view.View.OnGenericMotionListener { _, event ->
+            if (!isConnected) return@OnGenericMotionListener false
+            val isJoystick = event.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
+            if (!isJoystick) return@OnGenericMotionListener false
+            val device = InputDevice.getDevice(event.deviceId) ?: return@OnGenericMotionListener false
+            val flat = device.getMotionRange(MotionEvent.AXIS_X, event.source)?.flat ?: 0.1f
+            fun deadzone(v: Float) = if (kotlin.math.abs(v) > flat) v else 0f
+            gamepadLX = deadzone(event.getAxisValue(MotionEvent.AXIS_X))
+            gamepadLY = deadzone(event.getAxisValue(MotionEvent.AXIS_Y))
+            gamepadRX = deadzone(event.getAxisValue(MotionEvent.AXIS_Z))
+            gamepadRY = deadzone(event.getAxisValue(MotionEvent.AXIS_RZ))
+            gamepadLT = event.getAxisValue(MotionEvent.AXIS_LTRIGGER)
+            gamepadRT = event.getAxisValue(MotionEvent.AXIS_RTRIGGER)
+            val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+            val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            gamepadButtons = gamepadButtons
+                .let { if (hatX < -0.5f) it or ControllerPacket.LEFT_FLAG else it and ControllerPacket.LEFT_FLAG.inv() }
+                .let { if (hatX > 0.5f) it or ControllerPacket.RIGHT_FLAG else it and ControllerPacket.RIGHT_FLAG.inv() }
+                .let { if (hatY < -0.5f) it or ControllerPacket.UP_FLAG else it and ControllerPacket.UP_FLAG.inv() }
+                .let { if (hatY > 0.5f) it or ControllerPacket.DOWN_FLAG else it and ControllerPacket.DOWN_FLAG.inv() }
+            sendGamepadState()
+            true
+        }
+        localView.setOnGenericMotionListener(listener)
+        onDispose { localView.setOnGenericMotionListener(null) }
+    }
+
     // Lifecycle observer — pause/resume streaming on app background/foreground
     DisposableEffect(lifecycleOwner) {
         networkMonitor.startMonitoring()
@@ -148,6 +192,39 @@ fun NativeStreamPanel(
             streamManager?.stopStream()
             onStreamingStateChanged?.invoke(false)
         }
+    }
+
+    /** Send current accumulated gamepad state to the host PC. */
+    fun sendGamepadState() {
+        if (!isConnected) return
+        val lt = (gamepadLT * 255f).toInt().coerceIn(0, 255).toByte()
+        val rt = (gamepadRT * 255f).toInt().coerceIn(0, 255).toByte()
+        val lx = (gamepadLX * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+        val ly = (-gamepadLY * 32767f).toInt().coerceIn(-32767, 32767).toShort() // Y-axis inverted
+        val rx = (gamepadRX * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+        val ry = (-gamepadRY * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+        streamServiceConnection?.sendControllerInput(gamepadButtons, lt, rt, lx, ly, rx, ry)
+            ?: streamManager?.sendControllerInput(gamepadButtons, lt, rt, lx, ly, rx, ry)
+    }
+
+    /** Map a KEYCODE_BUTTON_* keycode to its ControllerPacket flag, or 0 if unknown. */
+    fun mapGamepadKeyToFlag(keyCode: Int): Int = when (keyCode) {
+        KeyEvent.KEYCODE_BUTTON_A -> ControllerPacket.A_FLAG
+        KeyEvent.KEYCODE_BUTTON_B -> ControllerPacket.B_FLAG
+        KeyEvent.KEYCODE_BUTTON_X -> ControllerPacket.X_FLAG
+        KeyEvent.KEYCODE_BUTTON_Y -> ControllerPacket.Y_FLAG
+        KeyEvent.KEYCODE_BUTTON_L1 -> ControllerPacket.LB_FLAG
+        KeyEvent.KEYCODE_BUTTON_R1 -> ControllerPacket.RB_FLAG
+        KeyEvent.KEYCODE_BUTTON_THUMBL -> ControllerPacket.LS_CLK_FLAG
+        KeyEvent.KEYCODE_BUTTON_THUMBR -> ControllerPacket.RS_CLK_FLAG
+        KeyEvent.KEYCODE_BUTTON_START -> ControllerPacket.PLAY_FLAG
+        KeyEvent.KEYCODE_BUTTON_SELECT -> ControllerPacket.BACK_FLAG
+        KeyEvent.KEYCODE_BUTTON_MODE -> ControllerPacket.SPECIAL_BUTTON_FLAG
+        KeyEvent.KEYCODE_DPAD_UP -> ControllerPacket.UP_FLAG
+        KeyEvent.KEYCODE_DPAD_DOWN -> ControllerPacket.DOWN_FLAG
+        KeyEvent.KEYCODE_DPAD_LEFT -> ControllerPacket.LEFT_FLAG
+        KeyEvent.KEYCODE_DPAD_RIGHT -> ControllerPacket.RIGHT_FLAG
+        else -> 0
     }
 
     fun startStreaming() {
@@ -228,7 +305,24 @@ fun NativeStreamPanel(
     }
     // Monitor switching is handled by the MonitorPickerPanel popup via SpatialWorkspace
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .onKeyEvent { keyEvent ->
+                val isGamepad = keyEvent.nativeKeyEvent.source and
+                    InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
+                if (!isGamepad || !isConnected) return@onKeyEvent false
+                val flag = mapGamepadKeyToFlag(keyEvent.nativeKeyEvent.keyCode)
+                if (flag == 0) return@onKeyEvent false
+                gamepadButtons = if (keyEvent.type == KeyEventType.KeyDown) {
+                    gamepadButtons or flag
+                } else {
+                    gamepadButtons and flag.inv()
+                }
+                sendGamepadState()
+                true
+            },
+    ) {
         // SpatialExternalSurface for low-latency video rendering (bypasses AndroidView compositing)
         SpatialExternalSurface(
             stereoMode = StereoMode.Mono,

@@ -11,6 +11,8 @@ data class StreamSettings(
     val fps: Int = 60,
     val bitrateKbps: Int = 20000,
     val codec: VideoCodec = VideoCodec.AUTO,
+    /** Enable 10-bit HDR streaming (H.265 Main10 / AV1 Main10, BT.2020 color space). */
+    val enableHdr: Boolean = false,
 )
 
 /**
@@ -27,9 +29,11 @@ enum class Resolution(val width: Int, val height: Int, val label: String) {
  * Video codec preference for the stream.
  */
 enum class VideoCodec(val label: String) {
-    AUTO("Auto (H.264/H.265)"),
+    AUTO("Auto (H.264/H.265/AV1)"),
     H264("H.264 only"),
     H265("H.265 only"),
+    AV1_MAIN8("AV1 (SDR, requires API 29+)"),
+    AV1_MAIN10("AV1 10-bit (requires API 29+)"),
 }
 
 /**

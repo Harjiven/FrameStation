@@ -102,6 +102,26 @@ class StreamService : Service() {
             )
         }
 
+        override fun sendControllerInput(
+            buttonFlags: Int,
+            leftTrigger: Int,
+            rightTrigger: Int,
+            leftStickX: Int,
+            leftStickY: Int,
+            rightStickX: Int,
+            rightStickY: Int,
+        ) {
+            streamManager?.sendControllerInput(
+                buttonFlags,
+                leftTrigger.toByte(),
+                rightTrigger.toByte(),
+                leftStickX.toShort(),
+                leftStickY.toShort(),
+                rightStickX.toShort(),
+                rightStickY.toShort(),
+            )
+        }
+
         override fun registerClient(client: IStreamServiceClient) {
             clients.register(client)
         }
@@ -165,6 +185,7 @@ class StreamService : Service() {
                 bitrateKbps = obj.optInt("bitrateKbps", 20000),
                 codec = VideoCodec.entries.find { it.name == obj.optString("codec") }
                     ?: VideoCodec.AUTO,
+                enableHdr = obj.optBoolean("enableHdr", false),
             )
         } catch (_: Exception) {
             StreamSettings()
