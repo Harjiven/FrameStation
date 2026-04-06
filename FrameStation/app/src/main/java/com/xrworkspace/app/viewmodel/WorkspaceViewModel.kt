@@ -339,18 +339,47 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * Mark the host with the given address as paired and persist the change.
      * Called by PairingPanel when pairing succeeds (or when checkServer reports already paired).
+     * If no matching host config exists yet, automatically creates one with this address as
+     * both name and address (the user can rename it later in the Host Manager).
      */
     fun markHostPaired(address: String) {
         Log.i(TAG, "markHostPaired: $address")
-        val host = _uiState.value.hostConfigs.find { it.address == address } ?: run {
-            Log.w(TAG, "markHostPaired: no host config found for address $address")
+        val existing = _uiState.value.hostConfigs.find { it.address == address }
+        if (existing != null) {
+            if (existing.isPaired) return  // already marked
+            val updated = existing.copy(isPaired = true)
+            hostConfigManager.updateHost(updated)
+            _uiState.update { state ->
+                state.copy(hostConfigs = state.hostConfigs.map { if (it.id == existing.id) updated else it })
+            }
             return
         }
-        if (host.isPaired) return  // already marked
-        val updated = host.copy(isPaired = true)
-        hostConfigManager.updateHost(updated)
+
+        // No existing host — auto-create one and mark it paired in a single step
+        Log.i(TAG, "markHostPaired: auto-creating host config for $address")
+        val certFileName = hostConfigManager.certFileNameForHost(
+            java.util.UUID.randomUUID().toString()
+        )
+        val newHost = HostConfig(
+            name = address,            // use IP as initial name; user can rename later
+            address = address,
+            certFileName = certFileName,
+            isPaired = true,
+        )
+        hostConfigManager.addHost(newHost)
+        val updatedHosts = hostConfigManager.loadHosts()
         _uiState.update { state ->
-            state.copy(hostConfigs = state.hostConfigs.map { if (it.id == host.id) updated else it })
+            // If this is the first host, make it active
+            val newActiveId = state.activeHostId ?: newHost.id
+            if (newActiveId == newHost.id) {
+                hostConfigManager.setActiveHostId(newHost.id)
+                sharedPreferences.edit().putString("server_address", newHost.address).apply()
+            }
+            state.copy(
+                hostConfigs = updatedHosts,
+                activeHostId = newActiveId,
+                serverAddress = if (newActiveId == newHost.id) newHost.address else state.serverAddress,
+            )
         }
     }
 
