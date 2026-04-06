@@ -196,10 +196,11 @@ fun HostManagerPanel(
                                 } else null,
                             )
 
-                            // Stream toggle chip
+                            // Stream toggle chip — only available for paired hosts
                             val isStreaming = host.id in activeStreamHostIds
                             FilterChip(
                                 selected = isStreaming,
+                                enabled = host.isPaired || isStreaming,
                                 onClick = {
                                     if (isStreaming) onStopStreamHost(host.id)
                                     else onStreamHost(host.id)

@@ -26,8 +26,9 @@ import com.xrworkspace.app.viewmodel.WolState
 import java.security.cert.X509Certificate
 
 /**
- * Compose panel that hosts a SurfaceView for native Moonlight streaming.
- * Supports touch-to-mouse mapping, keyboard input forwarding, and connection lifecycle.
+ * Compose panel that renders native Moonlight video streaming via [SpatialExternalSurface].
+ * Supports touch-to-mouse mapping via [SpatialInputEvent], keyboard input forwarding,
+ * and full connection lifecycle management including auto-reconnect.
  */
 @Suppress("DEPRECATION") // LocalLifecycleOwner moved to lifecycle-compose in newer versions
 @Composable

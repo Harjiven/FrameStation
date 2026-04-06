@@ -187,6 +187,7 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void playDecodedAudio(short[] audioData) {
+        if (track == null) return; // setup() failed — discard silently
         // Only queue up to 40 ms of pending audio data in addition to what AudioTrack is buffering for us.
         if (MoonBridge.getPendingAudioDuration() < 40) {
             // This will block until the write is completed. That can cause a backlog
@@ -224,6 +225,7 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void cleanup() {
+        if (track == null) return; // setup() failed — nothing to clean up
         // Immediately drop all pending data
         track.pause();
         track.flush();

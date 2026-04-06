@@ -61,8 +61,12 @@ class AutoReconnectManager(
 
         monitorJob?.cancel()
         monitorJob = coroutineScope.launch {
-            networkMonitor.networkState.collect { networkState ->
-                handleNetworkStateChange(networkState)
+            try {
+                networkMonitor.networkState.collect { networkState ->
+                    handleNetworkStateChange(networkState)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Network monitor flow terminated unexpectedly", e)
             }
         }
         Log.i(TAG, "Auto-reconnect monitoring started")

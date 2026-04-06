@@ -61,6 +61,12 @@ import com.xrworkspace.app.viewmodel.WorkspaceUiState
 import java.io.File
 import kotlinx.coroutines.launch
 
+// --- Layout constants (dp) ---
+private const val STREAM_PANEL_OFFSET_X = -1450   // stream panels arc to the left of main
+private const val BOOKMARK_PANEL_OFFSET_X = 980   // bookmark panels arc to the right of main
+private const val BOOKMARK_GRID_COL_SPACING = 520 // flat-grid column pitch
+private const val BOOKMARK_GRID_ROW_OFFSET = 220  // flat-grid row ±offset from center
+
 @Composable
 fun SpatialWorkspace(
     uiState: WorkspaceUiState,
@@ -419,17 +425,25 @@ fun SpatialWorkspace(
             }
         }
 
-        // Active stream panels — one SpatialPanel per streaming host
+        // Active stream panels — one SpatialPanel per streaming host.
+        // NOTE: currently limited to 1 simultaneous stream due to MoonBridge static JNI state.
+        // The multi-stream (forEach) branch is preserved for future use once MoonBridge is
+        // refactored to be instance-aware.
         val activeStreamHosts = uiState.hostConfigs.filter { it.id in uiState.activeStreamHostIds }
         if (activeStreamHosts.isNotEmpty()) {
+            // Each stream panel needs its own StreamController for toolbar integration.
+            val streamPanelControllers = remember(activeStreamHosts.map { it.id }) {
+                activeStreamHosts.associate { host -> host.id to StreamController() }
+            }
             if (activeStreamHosts.size == 1) {
                 // Single stream: flat offset to left of main panel
                 val host = activeStreamHosts.first()
+                val hostController = streamPanelControllers[host.id] ?: StreamController()
                 SpatialPanel(
                     modifier = SubspaceModifier
                         .width(1400.dp)
                         .height(900.dp)
-                        .offset(x = (-1450).dp),
+                        .offset(x = STREAM_PANEL_OFFSET_X.dp),
                     dragPolicy = MovePolicy(isEnabled = true),
                     resizePolicy = ResizePolicy(isEnabled = true),
                 ) {
@@ -440,16 +454,18 @@ fun SpatialWorkspace(
                             audioSettings = uiState.audioSettings,
                             autoReconnectEnabled = uiState.autoReconnectEnabled,
                             onStreamingStateChanged = {},
+                            streamController = hostController,
                         )
                     }
                 }
             } else {
                 // Multiple streams: arc in SpatialCurvedRow to the left of main panel
                 SpatialCurvedRow(
-                    modifier = SubspaceModifier.offset(x = (-1450).dp),
+                    modifier = SubspaceModifier.offset(x = STREAM_PANEL_OFFSET_X.dp),
                     curveRadius = uiState.curvedPanelSettings.radiusDp.dp,
                 ) {
                     activeStreamHosts.forEach { host ->
+                        val hostController = streamPanelControllers[host.id] ?: StreamController()
                         SpatialPanel(
                             modifier = SubspaceModifier
                                 .width(1200.dp)
@@ -464,6 +480,7 @@ fun SpatialWorkspace(
                                     audioSettings = uiState.audioSettings,
                                     autoReconnectEnabled = uiState.autoReconnectEnabled,
                                     onStreamingStateChanged = {},
+                                    streamController = hostController,
                                 )
                             }
                         }
@@ -477,7 +494,7 @@ fun SpatialWorkspace(
         if (curvedSettings.isEnabled && openBookmarks.size > 1) {
             // Native curved arc: SpatialCurvedRow handles all arc math and panel rotation
             SpatialCurvedRow(
-                modifier = SubspaceModifier.offset(x = 980.dp),
+                modifier = SubspaceModifier.offset(x = BOOKMARK_PANEL_OFFSET_X.dp),
                 curveRadius = curvedSettings.radiusDp.dp,
             ) {
                 openBookmarks.forEach { bookmark ->
@@ -503,8 +520,8 @@ fun SpatialWorkspace(
             openBookmarks.forEachIndexed { index, bookmark ->
                 val column = index / 2
                 val row = index % 2
-                val xOffsetDp = (980 + column * 520).toFloat()
-                val yOffsetDp = (if (row == 0) 220 else -220).toFloat()
+                val xOffsetDp = (BOOKMARK_PANEL_OFFSET_X + column * BOOKMARK_GRID_COL_SPACING).toFloat()
+                val yOffsetDp = (if (row == 0) BOOKMARK_GRID_ROW_OFFSET else -BOOKMARK_GRID_ROW_OFFSET).toFloat()
 
                 SpatialPanel(
                     modifier = SubspaceModifier

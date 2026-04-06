@@ -242,7 +242,7 @@ class MoonlightStreamManager(
                         "",    // glRenderer
                         object : PerfOverlayListener {
                             override fun onPerfUpdate(text: String) {
-                                Log.d(TAG, "Perf: $text")
+                                Log.v(TAG, "Perf: $text")
                             }
                         },
                     )
@@ -389,7 +389,7 @@ class MoonlightStreamManager(
     }
 
     override fun connectionStatusUpdate(connectionStatus: Int) {
-        Log.d(TAG, "Connection status: $connectionStatus")
+        Log.v(TAG, "Connection status: $connectionStatus")
     }
 
     override fun displayMessage(message: String) {

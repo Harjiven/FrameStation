@@ -427,6 +427,14 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun openStream(hostId: String) {
         _uiState.value.hostConfigs.find { it.id == hostId } ?: return
+        // MoonBridge (the native JNI layer) holds static audioRenderer/videoRenderer/
+        // connectionListener fields that are overwritten by each NvConnection instance.
+        // Until MoonBridge is refactored to be instance-aware, only one stream can be
+        // active at a time. Attempting a second stream would corrupt the first.
+        if (_uiState.value.activeStreamHostIds.isNotEmpty()) {
+            Log.w("WorkspaceViewModel", "Cannot open second stream — MoonBridge is single-instance. Stop the active stream first.")
+            return
+        }
         _uiState.update { state ->
             state.copy(
                 activeStreamHostIds = state.activeStreamHostIds + hostId,
