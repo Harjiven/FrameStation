@@ -293,8 +293,22 @@ class MoonlightStreamManager(
 
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start stream", e)
+                    val errorMsg = e.message ?: "Unknown error"
+                    // Mark auth/cert errors as intentional so auto-reconnect doesn't retry
+                    // (retrying without pairing first will never succeed)
+                    val isAuthError = errorMsg.contains("401") ||
+                        errorMsg.contains("not authorized", ignoreCase = true) ||
+                        errorMsg.contains("certificate", ignoreCase = true)
+                    if (isAuthError) {
+                        intentionalStop = true  // prevents auto-reconnect
+                    }
                     mainHandler.post {
-                        onConnectionTerminated?.invoke("Failed: ${e.message}")
+                        val userMsg = if (isAuthError) {
+                            "Not paired — use the Pair button first"
+                        } else {
+                            "Failed: $errorMsg"
+                        }
+                        onConnectionTerminated?.invoke(userMsg)
                     }
                 } finally {
                     streamThread = null
