@@ -179,12 +179,13 @@ class MoonlightStreamManager(
                     Log.i(TAG, "Streaming app: ${desktopApp.appName} (ID: ${desktopApp.appId})")
 
                     // Map codec preference to Moonlight video format flags.
-                    // AV1 requires both API 29+ AND a hardware AV1 decoder. Probe MediaCodecList
+                    // AV1 requires both API 29+ AND a HARDWARE AV1 decoder. Probe MediaCodecList
                     // to confirm the decoder exists before advertising AV1 support to the server,
                     // otherwise the server may negotiate AV1 and the stream will fail.
                     val av1Supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                         hasAv1Decoder()
-                    val videoFormats = when (streamCodec) {
+                    Log.i(TAG, "Codec config: streamCodec=$streamCodec av1Supported=$av1Supported sdk=${Build.VERSION.SDK_INT}")
+                    var videoFormats = when (streamCodec) {
                         VideoCodec.AUTO -> {
                             var mask = MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
                             if (av1Supported) mask = mask or MoonBridge.VIDEO_FORMAT_AV1_MAIN8
@@ -197,6 +198,16 @@ class MoonlightStreamManager(
                         VideoCodec.AV1_MAIN10 -> if (av1Supported) MoonBridge.VIDEO_FORMAT_AV1_MAIN10
                             else MoonBridge.VIDEO_FORMAT_H265_MAIN10
                     }
+                    // BELT-AND-SUSPENDERS: Strip ALL AV1 bits from the mask if no AV1 decoder.
+                    // Protects against any code path or saved setting that could leave AV1 in the mask.
+                    if (!av1Supported) {
+                        val av1Mask = MoonBridge.VIDEO_FORMAT_AV1_MAIN8 or MoonBridge.VIDEO_FORMAT_AV1_MAIN10
+                        videoFormats = videoFormats and av1Mask.inv()
+                        // Ensure we have AT LEAST one valid format
+                        if (videoFormats == 0) {
+                            videoFormats = MoonBridge.VIDEO_FORMAT_H265 or MoonBridge.VIDEO_FORMAT_H264
+                        }
+                    }
 
                     // If HDR is requested, include 10-bit format variants
                     val finalVideoFormats = if (streamHdr) {
@@ -205,6 +216,7 @@ class MoonlightStreamManager(
                     } else {
                         videoFormats
                     }
+                    Log.i(TAG, "videoFormats=0x${finalVideoFormats.toString(16)} (H264=0x1 H265=0x100 H265_M10=0x200 AV1=0x1000 AV1_M10=0x2000)")
 
                     // Resolve audio configuration from user settings
                     val audioConfig = audioSettings.audioChannels.toMoonBridgeConfig()
@@ -416,14 +428,26 @@ class MoonlightStreamManager(
     }
 
     /**
-     * Probes MediaCodecList for a hardware AV1 decoder. API 29+ doesn't guarantee
-     * AV1 decoder availability — Samsung Galaxy XR runs API 34 but has no AV1 decoder.
+     * Probes MediaCodecList for a HARDWARE AV1 decoder. API 29+ doesn't guarantee
+     * AV1 decoder availability — Samsung Galaxy XR runs API 34 but has no hardware AV1
+     * decoder (only Google's slow software fallback c2.android.av1.decoder, which can't
+     * keep up with real-time streaming). We require an explicitly hardware-accelerated
+     * decoder per `isHardwareAccelerated()` (API 29+).
      */
     private fun hasAv1Decoder(): Boolean {
         return try {
             val list = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
             list.codecInfos.any { codec ->
-                !codec.isEncoder && codec.supportedTypes.any { it.equals("video/av01", ignoreCase = true) }
+                if (codec.isEncoder) return@any false
+                if (!codec.supportedTypes.any { it.equals("video/av01", ignoreCase = true) }) return@any false
+                // Reject software/Google AV1 decoder — won't perform at real-time framerates
+                if (codec.name.contains("software", ignoreCase = true)) return@any false
+                if (codec.name.startsWith("c2.android.", ignoreCase = true)) return@any false
+                if (codec.name.startsWith("OMX.google.", ignoreCase = true)) return@any false
+                // API 29+: explicitly check hardware acceleration
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !codec.isHardwareAccelerated) return@any false
+                Log.i(TAG, "Found hardware AV1 decoder: ${codec.name}")
+                true
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to probe MediaCodecList for AV1", e)
