@@ -179,7 +179,6 @@ class StreamServiceConnection(
 
     private fun serializeAudioSettings(a: AudioSettings): String =
         JSONObject().apply {
-            put("isMuted", a.isMuted)
-            put("mode", a.mode.name)
+            put("audioMode", a.audioMode.name)
         }.toString()
 }

@@ -6,7 +6,9 @@ package com.xrworkspace.app.streaming
 import android.app.Service
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.RemoteCallbackList
 import android.util.Log
 import android.view.Surface
@@ -48,18 +50,25 @@ class StreamService : Service() {
             streamSettingsJson: String,
             audioSettingsJson: String,
         ) {
+            if (streamManager != null) {
+                Log.w(TAG, "startStream() called while already streaming — ignoring")
+                return
+            }
             Log.i(TAG, "startStream: $serverAddress (pid=${android.os.Process.myPid()})")
             val streamSettings = parseStreamSettings(streamSettingsJson)
             val audioSettings = parseAudioSettings(audioSettingsJson)
 
-            val manager = MoonlightStreamManager(applicationContext, prefs)
-            manager.onStageChanged = { stage -> broadcastStageChanged(stage) }
-            manager.onConnectionStarted = { broadcastConnectionStarted() }
-            manager.onConnectionTerminated = { reason -> broadcastConnectionTerminated(reason) }
-            manager.applyStreamSettings(streamSettings)
-            manager.applyAudioSettings(audioSettings)
-            streamManager = manager
-            manager.startStream(serverAddress, surface)
+            // MoonlightStreamManager must be created on the main thread (Android API requirement)
+            Handler(Looper.getMainLooper()).post {
+                val manager = MoonlightStreamManager(applicationContext, prefs)
+                manager.onStageChanged = { stage -> broadcastStageChanged(stage) }
+                manager.onConnectionStarted = { broadcastConnectionStarted() }
+                manager.onConnectionTerminated = { reason -> broadcastConnectionTerminated(reason) }
+                manager.applyStreamSettings(streamSettings)
+                manager.applyAudioSettings(audioSettings)
+                streamManager = manager
+                manager.startStream(serverAddress, surface)
+            }
         }
 
         override fun stopStream() {
@@ -166,8 +175,7 @@ class StreamService : Service() {
         return try {
             val obj = JSONObject(json)
             AudioSettings(
-                isMuted = obj.optBoolean("isMuted", false),
-                mode = AudioMode.entries.find { it.name == obj.optString("mode") }
+                audioMode = AudioMode.entries.find { it.name == obj.optString("audioMode") }
                     ?: AudioMode.STEREO,
             )
         } catch (_: Exception) {

@@ -114,8 +114,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         ":stream0" to StreamServiceConnection(application, ":stream0"),
         ":stream1" to StreamServiceConnection(application, ":stream1"),
     )
-    /** Maps hostId → processName for currently active streams. */
-    private val hostToSlot = mutableMapOf<String, String>()
+    /** Maps hostId → processName for currently active streams. Thread-safe for Binder callbacks. */
+    private val hostToSlot = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private val _uiState: MutableStateFlow<WorkspaceUiState>
 
@@ -220,7 +220,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
         // Pre-bind both stream service slots so they're ready when the user taps Stream
         streamSlots.values.forEach { slot ->
-            slot.onServiceDied = { hostId ->
+            slot.onServiceDied = {
                 // If a service process crashes, remove its host from active streams
                 val affectedHost = hostToSlot.entries.find { it.value == slot.processName }?.key
                 if (affectedHost != null) {
@@ -382,7 +382,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
             } catch (e: Exception) {
-                Log.e("WorkspaceVM", "Failed to fetch app list", e)
+                Log.e(TAG, "Failed to fetch app list", e)
                 _uiState.update {
                     it.copy(
                         isLoadingApps = false,
@@ -644,7 +644,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     _uiState.update { it.copy(wolState = WolState.Sent, wolError = null) }
                 },
                 onFailure = { e ->
-                    Log.e("WorkspaceVM", "WoL failed: ${e.message}", e)
+                    Log.e(TAG, "WoL failed: ${e.message}", e)
                     _uiState.update { it.copy(wolState = WolState.Failed, wolError = e.message) }
                 },
             )
@@ -713,7 +713,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     _uiState.update { it.copy(monitors = monitors, isLoadingMonitors = false) }
                 }
                 .onFailure { e ->
-                    Log.e("WorkspaceVM", "fetchMonitors failed: ${e.message}")
+                    Log.e(TAG, "fetchMonitors failed: ${e.message}")
                     _uiState.update {
                         it.copy(
                             isLoadingMonitors = false,
@@ -752,7 +752,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
             }.onFailure { e ->
-                Log.e("WorkspaceVM", "setActiveMonitor failed: ${e.message}")
+                Log.e(TAG, "setActiveMonitor failed: ${e.message}")
                 _uiState.update {
                     it.copy(
                         isLoadingMonitors = false,

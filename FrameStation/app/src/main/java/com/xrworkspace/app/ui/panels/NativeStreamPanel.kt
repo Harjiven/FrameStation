@@ -3,7 +3,6 @@
 
 package com.xrworkspace.app.ui.panels
 
-import android.app.Activity
 import android.util.Log
 import android.view.KeyEvent
 import android.view.Surface
@@ -52,7 +51,6 @@ fun NativeStreamPanel(
     streamServiceConnection: StreamServiceConnection? = null,
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("framestation_prefs", android.content.Context.MODE_PRIVATE) }
@@ -103,7 +101,7 @@ fun NativeStreamPanel(
                     onStreamingStateChanged?.invoke(true)
                 }
                 onConnectionTerminated = { reason ->
-                    val wasIntentional = wasIntentionalStop()
+                    val wasIntentional = streamManager?.wasIntentionalStop() ?: false
                     isConnected = false
                     isConnecting = false
                     hasDisconnected = true
@@ -162,7 +160,24 @@ fun NativeStreamPanel(
         isConnecting = true
         statusText = "Connecting..."
         if (streamServiceConnection != null) {
-            // IPC path — stream runs in isolated service process
+            // IPC path — wire callbacks so UI state updates when service connects/disconnects
+            streamServiceConnection.onConnectionStarted = {
+                isConnected = true
+                isConnecting = false
+                statusText = "Connected"
+                autoReconnectManager.cancelReconnect()
+                onStreamingStateChanged?.invoke(true)
+            }
+            streamServiceConnection.onConnectionTerminated = { reason ->
+                isConnected = false
+                isConnecting = false
+                hasDisconnected = true
+                statusText = reason ?: "Disconnected"
+                onStreamingStateChanged?.invoke(false)
+                if (autoReconnectEnabled) {
+                    autoReconnectManager.onStreamTerminated()
+                }
+            }
             streamServiceConnection.startStream(serverAddress, surface, streamSettings, audioSettings)
         } else {
             // Local path — stream runs in-process (main desktop panel)
@@ -269,12 +284,8 @@ fun NativeStreamPanel(
             onSurfaceCreated { surface ->
                 Log.i("NativeStreamPanel", "SpatialExternalSurface created")
                 surfaceRef = surface
-                // For service-backed panels, start stream immediately when surface is ready
-                if (streamServiceConnection != null) {
-                    isConnecting = true
-                    statusText = "Connecting..."
-                    streamServiceConnection.startStream(serverAddress, surface, streamSettings, audioSettings)
-                }
+                // Surface is ready — stream will start when user taps "Start Stream"
+                // (or immediately if connection overlay shows and user acts)
             }
             onSurfaceDestroyed { _ ->
                 Log.i("NativeStreamPanel", "SpatialExternalSurface destroyed")
