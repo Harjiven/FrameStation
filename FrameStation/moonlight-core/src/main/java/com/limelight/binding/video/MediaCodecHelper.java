@@ -763,8 +763,13 @@ public class MediaCodecHelper {
             return false;
         }
 
-        // TODO: Test some AV1 decoders
-        return false;
+        // FrameStationXR: Whitelist any hardware-accelerated AV1 decoder.
+        // Upstream Moonlight kept this returning `false` with a "TODO: test some AV1 decoders"
+        // comment, but the SW/non-HW filters above already exclude problematic decoders.
+        // Qualcomm's c2.qti.av1.decoder.low_latency on Galaxy XR is fully hardware-accelerated
+        // and works correctly with low-latency streaming.
+        LimeLog.info("Whitelisting hardware AV1 decoder: " + decoderInfo.getName());
+        return true;
     }
 
     @SuppressWarnings("deprecation")
