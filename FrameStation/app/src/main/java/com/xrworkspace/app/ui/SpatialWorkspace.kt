@@ -443,13 +443,13 @@ fun SpatialWorkspace(
                 }
             }
 
-            // Toolbar — tightly sized to its content (FilterChip Row with 16dp/8dp padding).
-            // Sits directly below the video/main panel as part of the same SpatialColumn.
+            // Toolbar — sized with extra room around the content for a comfortable
+            // grab/drag border. The actual WorkspaceToolbar Surface is centered inside.
             SpatialPanel(
                 modifier = SubspaceModifier
-                    .width(720.dp)
-                    .height(80.dp),
-                dragPolicy = MovePolicy(isEnabled = false),
+                    .width(900.dp)
+                    .height(140.dp),
+                dragPolicy = MovePolicy(isEnabled = true),
                 resizePolicy = ResizePolicy(isEnabled = false),
             ) {
                 Box(
