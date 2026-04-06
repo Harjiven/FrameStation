@@ -62,6 +62,7 @@ import com.xrworkspace.app.ui.components.WorkspaceToolbar
 import com.xrworkspace.app.ui.panels.BookmarkWebViewPanel
 import com.xrworkspace.app.ui.panels.DesktopStreamPanel
 import com.xrworkspace.app.ui.panels.NativeStreamPanel
+import com.xrworkspace.app.ui.panels.StreamVideoSurface
 import com.xrworkspace.app.ui.panels.rememberStreamController
 import com.xrworkspace.app.ui.panels.StreamController
 import com.xrworkspace.app.viewmodel.WolState
@@ -361,9 +362,29 @@ fun SpatialWorkspace(
             }
         }
 
-        // Main desktop panel — standalone, not in a SpatialRow
+        // Video surface panel — renders StreamVideoSurface in its own SpatialPanel
+        // because @SubspaceComposable (SpatialExternalSurface) cannot be mixed with
+        // regular Compose (Box, Text, Button) in the same composition tree.
+        // This panel sits behind the UI overlay panel at z=-1dp.
         var mainPanelWidthDp by remember { mutableFloatStateOf(1400f) }
         var mainPanelHeightDp by remember { mutableFloatStateOf(900f) }
+        if (uiState.showDesktopPanel && useNativeStreaming.value) {
+            StreamVideoSurface(
+                streamManager = null, // managed by NativeStreamPanel internally
+                streamServiceConnection = null,
+                isConnected = uiState.isStreaming,
+                panelWidthDp = mainPanelWidthDp,
+                panelHeightDp = mainPanelHeightDp,
+                onSurfaceCreated = { surface ->
+                    Log.i("SpatialWorkspace", "Video surface created")
+                },
+                onSurfaceDestroyed = {
+                    Log.i("SpatialWorkspace", "Video surface destroyed")
+                },
+            )
+        }
+
+        // Main desktop UI overlay panel
         SpatialPanel(
             modifier = SubspaceModifier
                 .alpha(animatedAlpha.value)

@@ -377,25 +377,9 @@ fun NativeStreamPanel(
                 true
             },
     ) {
-        // Video surface — extracted to a @SubspaceComposable so it can be called
-        // from the Subspace composition context that flows through SpatialPanel.
-        StreamVideoSurface(
-            streamManager = streamManager,
-            streamServiceConnection = streamServiceConnection,
-            isConnected = isConnected,
-            panelWidthDp = panelWidthDp,
-            panelHeightDp = panelHeightDp,
-            onSurfaceCreated = { surface ->
-                Log.i("NativeStreamPanel", "SpatialExternalSurface created")
-                surfaceRef = surface
-            },
-            onSurfaceDestroyed = {
-                Log.i("NativeStreamPanel", "SpatialExternalSurface destroyed")
-                surfaceRef = null
-                streamServiceConnection?.stopStream()
-                streamManager?.stopStream()
-            },
-        )
+        // NOTE: The video surface (StreamVideoSurface) is rendered in a SEPARATE SpatialPanel
+        // by SpatialWorkspace, because @SubspaceComposable and regular @Composable cannot mix
+        // in the same composition tree. This panel only contains the UI overlay.
 
         // Keyboard FAB — visible when connected
         if (isConnected) {
