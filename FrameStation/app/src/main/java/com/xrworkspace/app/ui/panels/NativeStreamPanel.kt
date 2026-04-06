@@ -55,6 +55,10 @@ fun NativeStreamPanel(
     streamController: StreamController? = null,
     /** When set, stream runs in an isolated service process. Null = local MoonlightStreamManager. */
     streamServiceConnection: StreamServiceConnection? = null,
+    /** Live panel width in dp — updated by SpatialWorkspace via onSizeChanged when user resizes. */
+    panelWidthDp: Float = 1400f,
+    /** Live panel height in dp — updated by SpatialWorkspace via onSizeChanged when user resizes. */
+    panelHeightDp: Float = 900f,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -335,11 +339,10 @@ fun NativeStreamPanel(
                     if (!isConnected) return
 
                     val hitPos = event.hitPosition ?: return
-                    // hitPosition is pixel offset from surface CENTER.
-                    // Convert to top-left origin, normalize to [0,1], scale to stream res.
-                    // Panel size: 1400x900dp (main) or 1200x750dp (arc panel).
-                    val panelHalfW = 700f
-                    val panelHalfH = 450f
+                    // hitPosition is in the same units as the panel's logical size (dp).
+                    // Use live panel dimensions so pointer accuracy survives user resize.
+                    val panelHalfW = panelWidthDp / 2f
+                    val panelHalfH = panelHeightDp / 2f
                     val normX = ((hitPos.x + panelHalfW) / (panelHalfW * 2f)).coerceIn(0f, 1f)
                     val normY = ((hitPos.y + panelHalfH) / (panelHalfH * 2f)).coerceIn(0f, 1f)
                     val streamW = (streamManager?.streamWidth ?: 1920).toShort()

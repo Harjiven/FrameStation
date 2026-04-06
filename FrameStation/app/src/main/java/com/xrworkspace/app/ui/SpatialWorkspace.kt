@@ -18,9 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.xr.compose.platform.LocalSession
+import androidx.xr.compose.platform.LocalSpatialCapabilities
 import androidx.xr.compose.spatial.ContentEdge
 import androidx.xr.compose.spatial.Orbiter
 import androidx.xr.compose.spatial.Subspace
+import androidx.xr.compose.subspace.layout.onSizeChanged
 import androidx.xr.compose.subspace.MovePolicy
 import androidx.xr.compose.subspace.ResizePolicy
 import androidx.xr.compose.subspace.SpatialColumn
@@ -107,6 +111,7 @@ fun SpatialWorkspace(
     onSunshineCredentialsChanged: (String, String) -> Unit = { _, _ -> },
     onUpdateHostProfile: (hostId: String, profile: StreamSettings?) -> Unit = { _, _ -> },
     onUpdateCurvedPanelSettings: (CurvedPanelSettings) -> Unit = {},
+    onTogglePassthrough: () -> Unit = {},
     onToggleLayoutPresets: () -> Unit = {},
     onSaveLayoutPreset: (String) -> Unit = {},
     onLoadLayoutPreset: (WorkspaceLayout) -> Unit = {},
@@ -129,10 +134,18 @@ fun SpatialWorkspace(
     LaunchedEffect(Unit) {
         launch {
             animatedAlpha.animateTo(
-                1.0f,
-                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
             )
         }
+    }
+
+    // Passthrough control — apply opacity to XR environment when state changes
+    val xrSession = LocalSession.current
+    val isPassthroughSupported = LocalSpatialCapabilities.current.isPassthroughControlEnabled
+    LaunchedEffect(uiState.isPassthroughActive) {
+        val targetOpacity = if (uiState.isPassthroughActive) 1.0f else 0.0f
+        xrSession?.scene?.spatialEnvironment?.preferredPassthroughOpacity = targetOpacity
     }
     
     Subspace {
@@ -345,11 +358,17 @@ fun SpatialWorkspace(
         }
 
         // Main desktop panel — standalone, not in a SpatialRow
+        var mainPanelWidthDp by remember { mutableFloatStateOf(1400f) }
+        var mainPanelHeightDp by remember { mutableFloatStateOf(900f) }
         SpatialPanel(
             modifier = SubspaceModifier
                 .alpha(animatedAlpha.value)
                 .width(1400.dp)
-                .height(900.dp),
+                .height(900.dp)
+                .onSizeChanged { w, h ->
+                    mainPanelWidthDp = w.toFloat()
+                    mainPanelHeightDp = h.toFloat()
+                },
             dragPolicy = MovePolicy(isEnabled = true),
             resizePolicy = ResizePolicy(isEnabled = true),
         ) {
@@ -369,6 +388,8 @@ fun SpatialWorkspace(
                             onWakeClick = onSendWakeOnLan,
                             onStreamingStateChanged = onStreamingStateChanged,
                             streamController = streamController,
+                            panelWidthDp = mainPanelWidthDp,
+                            panelHeightDp = mainPanelHeightDp,
                         )
                     } else {
                         DesktopStreamPanel(streamUrl = uiState.desktopStreamUrl)
@@ -423,6 +444,9 @@ fun SpatialWorkspace(
                     onShowKeyboard = { streamController.showKeyboard() },
                     onSwitchMonitor = onToggleMonitorPicker,
                     onPresetsClick = onPresetsClick,
+                    isPassthroughActive = uiState.isPassthroughActive,
+                    isPassthroughSupported = isPassthroughSupported,
+                    onTogglePassthrough = onTogglePassthrough,
                 )
             }
         }
@@ -442,11 +466,17 @@ fun SpatialWorkspace(
                 // Single stream: flat offset to left of main panel
                 val host = activeStreamHosts.first()
                 val hostController = streamPanelControllers[host.id] ?: StreamController()
+                var streamPanelWidthDp by remember { mutableFloatStateOf(1400f) }
+                var streamPanelHeightDp by remember { mutableFloatStateOf(900f) }
                 SpatialPanel(
                     modifier = SubspaceModifier
                         .width(1400.dp)
                         .height(900.dp)
-                        .offset(x = STREAM_PANEL_OFFSET_X.dp),
+                        .offset(x = STREAM_PANEL_OFFSET_X.dp)
+                        .onSizeChanged { w, h ->
+                            streamPanelWidthDp = w.toFloat()
+                            streamPanelHeightDp = h.toFloat()
+                        },
                     dragPolicy = MovePolicy(isEnabled = true),
                     resizePolicy = ResizePolicy(isEnabled = true),
                 ) {
@@ -459,6 +489,8 @@ fun SpatialWorkspace(
                             onStreamingStateChanged = {},
                             streamController = hostController,
                             streamServiceConnection = onGetStreamSlot(host.id),
+                            panelWidthDp = streamPanelWidthDp,
+                            panelHeightDp = streamPanelHeightDp,
                         )
                     }
                 }
@@ -470,10 +502,16 @@ fun SpatialWorkspace(
                 ) {
                     activeStreamHosts.forEach { host ->
                         val hostController = streamPanelControllers[host.id] ?: StreamController()
+                        var arcPanelWidthDp by remember(host.id) { mutableFloatStateOf(1200f) }
+                        var arcPanelHeightDp by remember(host.id) { mutableFloatStateOf(750f) }
                         SpatialPanel(
                             modifier = SubspaceModifier
                                 .width(1200.dp)
-                                .height(750.dp),
+                                .height(750.dp)
+                                .onSizeChanged { w, h ->
+                                    arcPanelWidthDp = w.toFloat()
+                                    arcPanelHeightDp = h.toFloat()
+                                },
                             dragPolicy = MovePolicy(isEnabled = true),
                             resizePolicy = ResizePolicy(isEnabled = true),
                         ) {
@@ -486,6 +524,8 @@ fun SpatialWorkspace(
                                     onStreamingStateChanged = {},
                                     streamController = hostController,
                                     streamServiceConnection = onGetStreamSlot(host.id),
+                                    panelWidthDp = arcPanelWidthDp,
+                                    panelHeightDp = arcPanelHeightDp,
                                 )
                             }
                         }

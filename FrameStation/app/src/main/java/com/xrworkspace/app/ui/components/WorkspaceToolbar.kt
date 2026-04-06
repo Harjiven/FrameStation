@@ -15,8 +15,10 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -61,6 +63,9 @@ fun WorkspaceToolbar(
     onStopStream: (() -> Unit)? = null,
     onShowKeyboard: (() -> Unit)? = null,
     onSwitchMonitor: (() -> Unit)? = null,
+    isPassthroughActive: Boolean = false,
+    isPassthroughSupported: Boolean = false,
+    onTogglePassthrough: (() -> Unit)? = null,
 ) {
     Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 4.dp) {
         Row(
@@ -76,6 +81,28 @@ fun WorkspaceToolbar(
                     label = {
                         Icon(Icons.Default.ConnectedTv, contentDescription = "Switch Monitor", modifier = Modifier.size(18.dp))
                     },
+                )
+            }
+
+            // Passthrough toggle — only shown when device supports passthrough control
+            if (isPassthroughSupported) {
+                FilterChip(
+                    selected = isPassthroughActive,
+                    onClick = { onTogglePassthrough?.invoke() },
+                    label = {
+                        Icon(
+                            imageVector = if (isPassthroughActive)
+                                Icons.Default.RemoveRedEye
+                            else
+                                Icons.Default.VisibilityOff,
+                            contentDescription = if (isPassthroughActive) "Disable passthrough" else "Enable passthrough",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    colors = if (isPassthroughActive) FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) else FilterChipDefaults.filterChipColors(),
                 )
             }
 

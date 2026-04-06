@@ -56,6 +56,7 @@ fun XRWorkspaceApp(viewModel: WorkspaceViewModel = viewModel()) {
             onSunshineCredentialsChanged = viewModel::updateSunshineCredentials,
             onUpdateHostProfile = viewModel::updateHostQualityProfile,
             onUpdateCurvedPanelSettings = viewModel::updateCurvedPanelSettings,
+            onTogglePassthrough = viewModel::togglePassthrough,
             onToggleLayoutPresets = viewModel::toggleLayoutPresets,
             onSaveLayoutPreset = viewModel::saveLayoutPreset,
             onLoadLayoutPreset = viewModel::loadLayoutPreset,

@@ -96,6 +96,8 @@ data class WorkspaceUiState(
     // Workspace layout presets
     val layoutPresets: List<WorkspaceLayout> = emptyList(),
     val showLayoutPresets: Boolean = false,
+    /** Whether the headset is currently in passthrough (see-through) mode. */
+    val isPassthroughActive: Boolean = false,
 )
 
 class WorkspaceViewModel(application: Application) : AndroidViewModel(application) {
@@ -795,6 +797,11 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun toggleLayoutPresets() {
         _uiState.update { it.copy(showLayoutPresets = !it.showLayoutPresets) }
+    }
+
+    /** Toggle between passthrough (see-through) and virtual environment. */
+    fun togglePassthrough() {
+        _uiState.update { it.copy(isPassthroughActive = !it.isPassthroughActive) }
     }
 
     /**
