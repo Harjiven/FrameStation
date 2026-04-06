@@ -336,6 +336,24 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(isPaired = paired) }
     }
 
+    /**
+     * Mark the host with the given address as paired and persist the change.
+     * Called by PairingPanel when pairing succeeds (or when checkServer reports already paired).
+     */
+    fun markHostPaired(address: String) {
+        Log.i(TAG, "markHostPaired: $address")
+        val host = _uiState.value.hostConfigs.find { it.address == address } ?: run {
+            Log.w(TAG, "markHostPaired: no host config found for address $address")
+            return
+        }
+        if (host.isPaired) return  // already marked
+        val updated = host.copy(isPaired = true)
+        hostConfigManager.updateHost(updated)
+        _uiState.update { state ->
+            state.copy(hostConfigs = state.hostConfigs.map { if (it.id == host.id) updated else it })
+        }
+    }
+
     fun togglePairingDialog() {
         _uiState.update { it.copy(showPairing = !it.showPairing) }
     }

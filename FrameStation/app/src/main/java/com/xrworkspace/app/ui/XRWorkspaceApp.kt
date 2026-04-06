@@ -30,6 +30,7 @@ fun XRWorkspaceApp(viewModel: WorkspaceViewModel = viewModel()) {
             onUpdateStreamUrl = viewModel::updateDesktopStreamUrl,
             onUpdateServerAddress = viewModel::updateServerAddress,
             onTogglePairing = viewModel::togglePairingDialog,
+            onMarkHostPaired = viewModel::markHostPaired,
             onStreamingStateChanged = viewModel::setStreamingState,
             onToggleHostManager = viewModel::toggleHostManager,
             onOpenStream = viewModel::openStream,

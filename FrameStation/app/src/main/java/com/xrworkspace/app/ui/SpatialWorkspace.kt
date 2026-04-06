@@ -89,6 +89,7 @@ fun SpatialWorkspace(
     onUpdateStreamUrl: (String) -> Unit,
     onUpdateServerAddress: (String) -> Unit,
     onTogglePairing: () -> Unit,
+    onMarkHostPaired: (String) -> Unit = {},
     onStreamingStateChanged: (Boolean) -> Unit,
     onToggleHostManager: () -> Unit = {},
     onOpenStream: (String) -> Unit = {},
@@ -223,6 +224,7 @@ fun SpatialWorkspace(
                     onAddressChanged = { ip -> onUpdateServerAddress(ip) },
                     onDismiss = { onTogglePairing() },
                     onScanNetwork = onToggleDiscovery,
+                    onPairingSuccess = onMarkHostPaired,
                     dataDir = dataDir,
                 )
             }

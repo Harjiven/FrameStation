@@ -68,6 +68,9 @@ fun PairingPanel(
     onAddressChanged: (String) -> Unit,
     onDismiss: () -> Unit,
     onScanNetwork: (() -> Unit)? = null,
+    /** Called with the paired server's IP when pairing succeeds. ViewModel uses this
+     *  to find the matching HostConfig by address and flip its isPaired flag. */
+    onPairingSuccess: (String) -> Unit = {},
     dataDir: File,
 ) {
     val scope = rememberCoroutineScope()
@@ -91,7 +94,13 @@ fun PairingPanel(
                 serverManager.checkServer(ipAddress)
             }.onSuccess { info ->
                 serverInfo = info
-                step = if (info.isPaired) PairingStep.PAIRED else PairingStep.SERVER_REACHABLE
+                if (info.isPaired) {
+                    step = PairingStep.PAIRED
+                    // Server reports already paired — sync the host config flag
+                    onPairingSuccess(ipAddress)
+                } else {
+                    step = PairingStep.SERVER_REACHABLE
+                }
             }.onFailure { e ->
                 errorMessage = e.message ?: "Connection failed"
                 step = PairingStep.SERVER_UNREACHABLE
@@ -110,7 +119,11 @@ fun PairingPanel(
                 serverManager.pair(ipAddress, generatedPin)
             }.onSuccess { pairState ->
                 when (pairState) {
-                    PairingManager.PairState.PAIRED -> step = PairingStep.PAIRED
+                    PairingManager.PairState.PAIRED -> {
+                        step = PairingStep.PAIRED
+                        // Notify ViewModel so it can update the matching HostConfig.isPaired flag
+                        onPairingSuccess(ipAddress)
+                    }
                     PairingManager.PairState.PIN_WRONG -> {
                         errorMessage = "PIN was incorrect. Try again."
                         step = PairingStep.PAIR_FAILED
