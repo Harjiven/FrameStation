@@ -31,6 +31,7 @@ import androidx.xr.compose.spatial.Subspace
 import androidx.xr.compose.subspace.MovePolicy
 import androidx.xr.compose.subspace.ResizePolicy
 import androidx.xr.compose.subspace.SpatialColumn
+import androidx.xr.compose.subspace.SpatialSpacer
 import androidx.xr.compose.subspace.SpatialCurvedRow
 import androidx.xr.compose.subspace.SpatialPanel
 import androidx.xr.compose.subspace.SpatialRow
@@ -411,9 +412,9 @@ fun SpatialWorkspace(
         ) {
 
             // Main desktop UI overlay panel — only shown when NOT streaming.
-            // NOTE: NativeStreamPanel's DisposableEffect.onDispose used to kill the stream
-            // when this panel was removed from composition. We patched it to only stop on
-            // explicit user action, so this conditional removal is now safe.
+            // While streaming, a SpatialSpacer takes its place so the toolbar below stays
+            // anchored at the same Y position (otherwise SpatialColumn would re-center the
+            // toolbar to y=0 when the only remaining child).
             if (!uiState.isStreaming) {
                 SpatialPanel(
                     modifier = SubspaceModifier
@@ -457,6 +458,14 @@ fun SpatialWorkspace(
                         }
                     }
                 }
+            } else {
+                // Invisible spacer keeps the column layout consistent so the toolbar
+                // stays anchored below the video panel area instead of centering at y=0.
+                SpatialSpacer(
+                    modifier = SubspaceModifier
+                        .width(1400.dp)
+                        .height(900.dp),
+                )
             }
 
             // Toolbar — sized with extra room around the content for a comfortable
