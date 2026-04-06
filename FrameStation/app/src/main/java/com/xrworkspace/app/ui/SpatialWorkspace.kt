@@ -383,6 +383,10 @@ fun SpatialWorkspace(
                 isConnected = uiState.isStreaming,
                 panelWidthDp = mainPanelWidthDp,
                 panelHeightDp = mainPanelHeightDp,
+                // Align with the main UI panel slot inside SpatialColumn.
+                // Column = [mainPanel(900) + toolbar(140)] = 1040dp centered at y=0.
+                // Main panel center sits at y = +70 (toolbar takes 140 below).
+                offsetYDp = 70f,
                 onSurfaceCreated = { surface ->
                     Log.i("SpatialWorkspace", "Video surface created")
                     mainSurfaceRef = surface

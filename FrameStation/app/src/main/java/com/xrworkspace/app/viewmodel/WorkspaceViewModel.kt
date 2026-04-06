@@ -351,6 +351,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setStreamingState(streaming: Boolean) {
+        Log.i(TAG, "setStreamingState: $streaming")
         _uiState.update { it.copy(isStreaming = streaming) }
     }
 

@@ -37,6 +37,8 @@ fun StreamVideoSurface(
     isConnected: Boolean,
     panelWidthDp: Float,
     panelHeightDp: Float,
+    /** Y offset in dp — used to align with the main UI panel slot inside SpatialColumn. */
+    offsetYDp: Float = 0f,
     onSurfaceCreated: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
 ) {
@@ -44,7 +46,7 @@ fun StreamVideoSurface(
         modifier = SubspaceModifier
             .width(panelWidthDp.dp)
             .height(panelHeightDp.dp)
-            .offset(z = (-1).dp),
+            .offset(y = offsetYDp.dp, z = (-1).dp),
         stereoMode = StereoMode.Mono,
         dragPolicy = MovePolicy(isEnabled = true),
         resizePolicy = ResizePolicy(isEnabled = true),
