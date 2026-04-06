@@ -179,8 +179,11 @@ class MoonlightStreamManager(
                     Log.i(TAG, "Streaming app: ${desktopApp.appName} (ID: ${desktopApp.appId})")
 
                     // Map codec preference to Moonlight video format flags.
-                    // AV1 requires API 29 (Android 10) for hardware decode support.
-                    val av1Supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                    // AV1 requires both API 29+ AND a hardware AV1 decoder. Probe MediaCodecList
+                    // to confirm the decoder exists before advertising AV1 support to the server,
+                    // otherwise the server may negotiate AV1 and the stream will fail.
+                    val av1Supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        hasAv1Decoder()
                     val videoFormats = when (streamCodec) {
                         VideoCodec.AUTO -> {
                             var mask = MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
@@ -410,6 +413,22 @@ class MoonlightStreamManager(
         Log.i(TAG, "Reconnecting to $address")
         startStream(address, surface, lastServerCert)
         return true
+    }
+
+    /**
+     * Probes MediaCodecList for a hardware AV1 decoder. API 29+ doesn't guarantee
+     * AV1 decoder availability — Samsung Galaxy XR runs API 34 but has no AV1 decoder.
+     */
+    private fun hasAv1Decoder(): Boolean {
+        return try {
+            val list = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+            list.codecInfos.any { codec ->
+                !codec.isEncoder && codec.supportedTypes.any { it.equals("video/av01", ignoreCase = true) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to probe MediaCodecList for AV1", e)
+            false
+        }
     }
 
     /**
