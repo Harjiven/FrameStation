@@ -133,9 +133,11 @@ fun NativeStreamPanel(
         }
     }
 
-    // Capture analog gamepad axes (sticks, triggers, d-pad hat) via onGenericMotionListener
+    // Capture analog gamepad axes (sticks, triggers, d-pad hat) via onGenericMotionListener.
+    // Key on localView only (not isConnected) — the listener checks isConnected internally,
+    // avoiding the race where onDispose nulls the listener after the new one is registered.
     val localView = androidx.compose.ui.platform.LocalView.current
-    DisposableEffect(localView, isConnected) {
+    DisposableEffect(localView) {
         val listener = android.view.View.OnGenericMotionListener { _, event ->
             if (!isConnected) return@OnGenericMotionListener false
             val isJoystick = event.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK

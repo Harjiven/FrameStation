@@ -76,8 +76,11 @@ class StreamServiceConnection(
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             Log.i(TAG, "Connected to $processName")
             val svc = IStreamService.Stub.asInterface(binder)
-            service = svc
-            _isBound = true
+            synchronized(this@StreamServiceConnection) {
+                service = svc
+                binderRef = binder
+                _isBound = true
+            }
             // Register death recipient so we know if the service process crashes
             try {
                 binder.linkToDeath(deathRecipient, 0)
@@ -89,15 +92,22 @@ class StreamServiceConnection(
 
         override fun onServiceDisconnected(name: ComponentName) {
             Log.w(TAG, "Service $processName disconnected")
-            service = null
-            _isBound = false
+            synchronized(this@StreamServiceConnection) {
+                service = null
+                binderRef = null
+                _isBound = false
+            }
         }
     }
 
+    private var binderRef: IBinder? = null  // held so we can unlinkToDeath on unbind
+
     private val deathRecipient = IBinder.DeathRecipient {
         Log.e(TAG, "StreamService process $processName died unexpectedly")
-        service = null
-        _isBound = false
+        synchronized(this@StreamServiceConnection) {
+            service = null
+            _isBound = false
+        }
         onServiceDied?.invoke()
     }
 
@@ -113,12 +123,19 @@ class StreamServiceConnection(
         if (_isBound) {
             try {
                 service?.unregisterClient(clientCallback)
+                // Unlink death recipient before unbinding to prevent stale callbacks
+                binderRef?.let {
+                    try { it.unlinkToDeath(deathRecipient, 0) } catch (_: Exception) {}
+                }
                 context.unbindService(serviceConnection)
             } catch (e: Exception) {
                 Log.w(TAG, "Error unbinding from $processName", e)
             } finally {
-                service = null
-                _isBound = false
+                synchronized(this) {
+                    service = null
+                    binderRef = null
+                    _isBound = false
+                }
             }
         }
     }

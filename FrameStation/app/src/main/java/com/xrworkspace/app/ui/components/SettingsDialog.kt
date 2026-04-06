@@ -316,10 +316,10 @@ fun SettingsPanel(
                 // Recommended bitrate button
                 TextButton(
                     onClick = {
-                        bitrateKbps = recommendedBitrateKbps(selectedResolution, selectedFps).toFloat()
+                        bitrateKbps = recommendedBitrateKbps(selectedResolution, selectedFps, selectedCodec).toFloat()
                     },
                 ) {
-                    Text("Use Recommended (${formatBitrate(recommendedBitrateKbps(selectedResolution, selectedFps))})")
+                    Text("Use Recommended (${formatBitrate(recommendedBitrateKbps(selectedResolution, selectedFps, selectedCodec))})")
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -495,7 +495,8 @@ fun SettingsPanel(
                             fps = selectedFps,
                             bitrateKbps = bitrateKbps.roundToInt(),
                             codec = selectedCodec,
-                            enableHdr = enableHdr,
+                             // Only save HDR as enabled if the selected codec actually supports it
+                             enableHdr = enableHdr && selectedCodec != VideoCodec.H264,
                         )
                         val newCurvedSettings = CurvedPanelSettings(
                             isEnabled = curvedEnabled,

@@ -43,8 +43,7 @@ class MoonlightStreamManager(
         private const val HTTPS_PORT = 47984   // GameStream HTTPS control port
     }
 
-    // applicationContext is a process singleton — it will never be GC'd, so a strong reference is safe.
-    // WeakReference here was overly defensive and would cause spurious "Context gone" aborts.
+    // applicationContext is a process singleton — strong reference is safe here.
     private val appContext = context.applicationContext
     private val dataDir = context.filesDir
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -358,9 +357,14 @@ class MoonlightStreamManager(
         intentionalStop = true
         isStreamingActive = false
         // Interrupt the startup thread if it is still running (e.g. stuck on app-list fetch).
-        streamThread?.let {
+        // Join with a timeout to ensure the old thread exits before we clear the connection
+        // state — prevents two decoder instances if stopStream/startStream are called rapidly.
+        streamThread?.let { t ->
             Log.i(TAG, "Interrupting stream startup thread")
-            it.interrupt()
+            t.interrupt()
+            t.join(3_000L)
+            if (t.isAlive) Log.w(TAG, "Stream thread did not exit within 3s after interrupt")
+            streamThread = null
         }
         synchronized(streamLock) {
             Log.i(TAG, "Stopping stream (intentional)")

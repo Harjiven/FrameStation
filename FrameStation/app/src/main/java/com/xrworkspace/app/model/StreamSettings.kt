@@ -37,10 +37,20 @@ enum class VideoCodec(val label: String) {
 }
 
 /**
- * Calculates a recommended bitrate (kbps) for the given resolution and FPS.
- * Formula: width * height * fps * 0.04 / 1000, clamped to [1000, 100000].
+ * Calculates a recommended bitrate (kbps) for the given resolution, FPS, and codec.
+ * AV1 is ~40% more efficient than H.264; H.265 is ~30% more efficient than H.264.
+ * Formula: width * height * fps * multiplier / 1000, clamped to [1000, 100000].
  */
-fun recommendedBitrateKbps(resolution: Resolution, fps: Int): Int {
-    val raw = (resolution.width.toLong() * resolution.height * fps * 0.04 / 1000).toInt()
+fun recommendedBitrateKbps(
+    resolution: Resolution,
+    fps: Int,
+    codec: VideoCodec = VideoCodec.AUTO,
+): Int {
+    val multiplier = when (codec) {
+        VideoCodec.H264 -> 0.04
+        VideoCodec.AUTO, VideoCodec.H265 -> 0.03       // assume H.265 for AUTO
+        VideoCodec.AV1_MAIN8, VideoCodec.AV1_MAIN10 -> 0.024
+    }
+    val raw = (resolution.width.toLong() * resolution.height * fps * multiplier / 1000).toInt()
     return raw.coerceIn(1000, 100000)
 }

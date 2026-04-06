@@ -37,7 +37,8 @@ class StreamService : Service() {
     }
 
     private lateinit var prefs: SharedPreferences
-    private var streamManager: MoonlightStreamManager? = null
+    @Volatile private var streamManager: MoonlightStreamManager? = null
+    private val managerLock = Any()
 
     // RemoteCallbackList safely handles death of client processes
     private val clients = RemoteCallbackList<IStreamServiceClient>()
@@ -50,9 +51,11 @@ class StreamService : Service() {
             streamSettingsJson: String,
             audioSettingsJson: String,
         ) {
-            if (streamManager != null) {
-                Log.w(TAG, "startStream() called while already streaming — ignoring")
-                return
+            synchronized(managerLock) {
+                if (streamManager != null) {
+                    Log.w(TAG, "startStream() called while already streaming — ignoring")
+                    return
+                }
             }
             Log.i(TAG, "startStream: $serverAddress (pid=${android.os.Process.myPid()})")
             val streamSettings = parseStreamSettings(streamSettingsJson)
@@ -60,21 +63,28 @@ class StreamService : Service() {
 
             // MoonlightStreamManager must be created on the main thread (Android API requirement)
             Handler(Looper.getMainLooper()).post {
-                val manager = MoonlightStreamManager(applicationContext, prefs)
-                manager.onStageChanged = { stage -> broadcastStageChanged(stage) }
-                manager.onConnectionStarted = { broadcastConnectionStarted() }
-                manager.onConnectionTerminated = { reason -> broadcastConnectionTerminated(reason) }
-                manager.applyStreamSettings(streamSettings)
-                manager.applyAudioSettings(audioSettings)
-                streamManager = manager
-                manager.startStream(serverAddress, surface)
+                synchronized(managerLock) {
+                    if (streamManager != null) return@post  // stopStream() raced with us
+                    val manager = MoonlightStreamManager(applicationContext, prefs)
+                    manager.onStageChanged = { stage -> broadcastStageChanged(stage) }
+                    manager.onConnectionStarted = { broadcastConnectionStarted() }
+                    manager.onConnectionTerminated = { reason -> broadcastConnectionTerminated(reason) }
+                    manager.applyStreamSettings(streamSettings)
+                    manager.applyAudioSettings(audioSettings)
+                    streamManager = manager
+                    manager.startStream(serverAddress, surface)
+                }
             }
         }
 
         override fun stopStream() {
             Log.i(TAG, "stopStream")
-            streamManager?.stopStream()
-            streamManager = null
+            val manager = synchronized(managerLock) {
+                val m = streamManager
+                streamManager = null
+                m
+            }
+            manager?.stopStream()
         }
 
         override fun sendMousePosition(x: Int, y: Int, streamWidth: Int, streamHeight: Int) {

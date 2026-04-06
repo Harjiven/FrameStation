@@ -433,7 +433,9 @@ fun SpatialWorkspace(
         val activeStreamHosts = uiState.hostConfigs.filter { it.id in uiState.activeStreamHostIds }
         if (activeStreamHosts.isNotEmpty()) {
             // Each stream panel needs its own StreamController for toolbar integration.
-            val streamPanelControllers = remember(activeStreamHosts.map { it.id }) {
+            // Key on the stable Set reference, not a newly-allocated List, to avoid
+            // recreating StreamControllers on every recomposition.
+            val streamPanelControllers = remember(uiState.activeStreamHostIds) {
                 activeStreamHosts.associate { host -> host.id to StreamController() }
             }
             if (activeStreamHosts.size == 1) {

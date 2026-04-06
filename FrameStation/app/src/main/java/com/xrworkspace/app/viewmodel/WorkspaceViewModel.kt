@@ -222,7 +222,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        // Pre-bind both stream service slots so they're ready when the user taps Stream
+        // Pre-bind all stream service slots so they're ready when the user taps Stream
         streamSlots.values.forEach { slot ->
             slot.onServiceDied = {
                 // If a service process crashes, remove its host from active streams
@@ -234,7 +234,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
             }
-            slot.bind()
+            try {
+                slot.bind()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to pre-bind stream slot ${slot.processName}", e)
+                // Non-fatal: the slot will be unavailable; openStream() will skip it
+            }
         }
     }
 
