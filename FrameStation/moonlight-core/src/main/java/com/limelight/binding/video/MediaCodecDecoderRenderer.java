@@ -71,6 +71,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private int initialWidth, initialHeight;
     private int videoFormat;
     private SurfaceHolder renderTarget;
+    private android.view.Surface directSurface;
     private volatile boolean stopping;
     private CrashListener crashListener;
     private boolean reportedCrash;
@@ -292,6 +293,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     public void setRenderTarget(SurfaceHolder renderTarget) {
         this.renderTarget = renderTarget;
+    }
+
+    /** Overload for SpatialExternalSurface — accepts a plain Surface directly. */
+    public void setRenderTarget(android.view.Surface surface) {
+        this.directSurface = surface;
     }
 
     public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
@@ -537,7 +543,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         LimeLog.info("Configuring with format: "+format);
 
-        videoDecoder.configure(format, renderTarget.getSurface(), null, 0);
+        android.view.Surface outputSurface = (directSurface != null)
+                ? directSurface
+                : renderTarget.getSurface();
+        videoDecoder.configure(format, outputSurface, null, 0);
 
         configuredFormat = format;
 

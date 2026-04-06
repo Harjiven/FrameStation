@@ -6,54 +6,11 @@ package com.xrworkspace.app.ui.panels
 import android.app.Activity
 import android.util.Log
 import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.view.ViewGroup
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import android.view.Surface
+import androidx.xr.compose.subspace.SpatialExternalSurface
+import androidx.xr.compose.subspace.StereoMode
+import androidx.xr.compose.subspace.layout.InteractionPolicy
+import androidx.xr.compose.subspace.layout.SpatialInputEvent
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.limelight.nvstream.input.KeyboardPacket
@@ -100,8 +57,7 @@ fun NativeStreamPanel(
     var isConnected by remember { mutableStateOf(false) }
     var isConnecting by remember { mutableStateOf(false) }
     var hasDisconnected by remember { mutableStateOf(false) }
-    var surfaceHolderRef by remember { mutableStateOf<SurfaceHolder?>(null) }
-    var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
+    var surfaceRef by remember { mutableStateOf<Surface?>(null) }
     var reconnectAttemptNumber by remember { mutableIntStateOf(0) }
 
     // Network monitor — tracks Wi-Fi connectivity state
@@ -194,13 +150,13 @@ fun NativeStreamPanel(
     fun startStreaming() {
         // Cancel any pending auto-reconnect when user manually starts a stream
         autoReconnectManager.cancelReconnect()
-        val holder = surfaceHolderRef
-        if (holder != null && activity != null) {
+        val surface = surfaceRef
+        if (surface != null && activity != null) {
             isConnecting = true
             statusText = "Connecting..."
             streamManager?.applyStreamSettings(streamSettings)
             streamManager?.applyAudioSettings(audioSettings)
-            streamManager?.startStream(serverAddress, holder, serverCert, selectedAppId)
+            streamManager?.startStream(serverAddress, surface, serverCert, selectedAppId)
         } else {
             statusText = "Surface not ready — wait a moment and try again"
         }
@@ -242,88 +198,56 @@ fun NativeStreamPanel(
     // Monitor switching is handled by the MonitorPickerPanel popup via SpatialWorkspace
 
     Box(modifier = modifier.fillMaxSize()) {
-        // SurfaceView for video rendering
-        AndroidView(
-            factory = { ctx ->
-                SurfaceView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
+        // SpatialExternalSurface for low-latency video rendering (bypasses AndroidView compositing)
+        SpatialExternalSurface(
+            stereoMode = StereoMode.Mono,
+            interactionPolicy = object : InteractionPolicy {
+                override val isEnabled: Boolean = true
+                override fun onInputEvent(event: SpatialInputEvent) {
+                    if (streamManager == null || !isConnected) return
 
-                        isFocusable = true
-                        isFocusableInTouchMode = true
+                    // hitPosition is pixel offset from surface CENTER.
+                    // Convert to top-left origin, then normalize to [0,1], then scale to stream res.
+                    // Panel is 1400x900dp; treat dp as pixels for coordinate mapping purposes.
+                    val hitPos = event.hitPosition ?: return
+                    val panelHalfW = 700f  // half of 1400dp panel width
+                    val panelHalfH = 450f  // half of 900dp panel height
+                    val normX = ((hitPos.x + panelHalfW) / (panelHalfW * 2f)).coerceIn(0f, 1f)
+                    val normY = ((hitPos.y + panelHalfH) / (panelHalfH * 2f)).coerceIn(0f, 1f)
+                    val streamX = (normX * streamManager.streamWidth).toInt()
+                        .coerceIn(0, streamManager.streamWidth - 1).toShort()
+                    val streamY = (normY * streamManager.streamHeight).toInt()
+                        .coerceIn(0, streamManager.streamHeight - 1).toShort()
+                    val streamW = streamManager.streamWidth.toShort()
+                    val streamH = streamManager.streamHeight.toShort()
 
-                        // Touch-to-mouse coordinate mapping
-                        setOnTouchListener { v, event ->
-                            if (streamManager == null || !isConnected) return@setOnTouchListener false
-
-                            val streamW = streamManager.streamWidth.toShort()
-                            val streamH = streamManager.streamHeight.toShort()
-                            val streamX = (event.x / v.width * streamManager.streamWidth).toInt()
-                                .coerceIn(0, streamManager.streamWidth - 1).toShort()
-                            val streamY = (event.y / v.height * streamManager.streamHeight).toInt()
-                                .coerceIn(0, streamManager.streamHeight - 1).toShort()
-
-                            when (event.actionMasked) {
-                                MotionEvent.ACTION_DOWN -> {
-                                    streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                                    streamManager.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
-                                }
-                                MotionEvent.ACTION_MOVE -> {
-                                    streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                                }
-                                MotionEvent.ACTION_UP -> {
-                                    streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
-                                    streamManager.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
-                                }
-                                MotionEvent.ACTION_SCROLL -> {
-                                    val scrollY = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
-                                    if (scrollY != 0f) {
-                                        streamManager.sendMouseScroll(scrollY.toInt().toByte())
-                                    }
-                                }
-                            }
-                            true
+                    when (event.action) {
+                        SpatialInputEvent.Action.DOWN -> {
+                            streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
+                            streamManager.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT)
                         }
-
-                        // Hardware keyboard forwarding
-                        setOnKeyListener { _, keyCode, event ->
-                            if (streamManager == null || !isConnected) return@setOnKeyListener false
-                            val keyMap = translateKeyCode(keyCode)
-                            if (keyMap != 0.toShort()) {
-                                val direction: Byte = if (event.action == KeyEvent.ACTION_DOWN)
-                                    KeyboardPacket.KEY_DOWN else KeyboardPacket.KEY_UP
-                                val modifierFlags: Byte = translateModifiers(event)
-                                streamManager.sendKeyboardInput(keyMap, direction, modifierFlags, 0.toByte())
-                                true
-                            } else false
+                        SpatialInputEvent.Action.MOVE -> {
+                            streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
                         }
-
-                        holder.addCallback(object : SurfaceHolder.Callback {
-                            override fun surfaceCreated(holder: SurfaceHolder) {
-                                Log.i("NativeStreamPanel", "Surface created (${holder.surfaceFrame.width()}x${holder.surfaceFrame.height()})")
-                                surfaceHolderRef = holder
-                            }
-                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                                Log.i("NativeStreamPanel", "Surface changed: ${width}x${height}")
-                            }
-                            override fun surfaceDestroyed(holder: SurfaceHolder) {
-                                Log.i("NativeStreamPanel", "Surface destroyed")
-                                surfaceHolderRef = null
-                                streamManager?.stopStream()
-                            }
-                        })
-
-                        surfaceViewRef = this
+                        SpatialInputEvent.Action.UP -> {
+                            streamManager.sendMousePosition(streamX, streamY, streamW, streamH)
+                            streamManager.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT)
+                        }
+                        else -> { /* hover / other events — no-op */ }
                     }
+                }
             },
-            onRelease = {
-                surfaceViewRef = null
-                surfaceHolderRef = null
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+        ) {
+            onSurfaceCreated { surface ->
+                Log.i("NativeStreamPanel", "SpatialExternalSurface created")
+                surfaceRef = surface
+            }
+            onSurfaceDestroyed { _ ->
+                Log.i("NativeStreamPanel", "SpatialExternalSurface destroyed")
+                surfaceRef = null
+                streamManager?.stopStream()
+            }
+        }
 
         // Keyboard FAB — visible when connected
         if (isConnected) {

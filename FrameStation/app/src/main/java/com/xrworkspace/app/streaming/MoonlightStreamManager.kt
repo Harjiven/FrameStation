@@ -6,7 +6,7 @@ package com.xrworkspace.app.streaming
 import android.app.Activity
 import android.content.SharedPreferences
 import android.util.Log
-import android.view.SurfaceHolder
+import android.view.Surface
 import com.limelight.binding.PlatformBinding
 import com.limelight.binding.video.CrashListener
 import com.limelight.binding.video.MediaCodecDecoderRenderer
@@ -68,7 +68,7 @@ class MoonlightStreamManager(
 
     // Last connection parameters — used for reconnection
     private var lastServerAddress: String? = null
-    private var lastSurfaceHolder: SurfaceHolder? = null
+    private var lastSurface: Surface? = null
     private var lastServerCert: X509Certificate? = null
 
     /** Whether a stream is currently active (connected and not terminated). */
@@ -114,13 +114,13 @@ class MoonlightStreamManager(
      */
     fun startStream(
         serverAddress: String,
-        surfaceHolder: SurfaceHolder,
+        surface: Surface,
         serverCert: X509Certificate? = null,
         appId: Int? = null,
     ) {
         // Store connection parameters for potential reconnection
         lastServerAddress = serverAddress
-        lastSurfaceHolder = surfaceHolder
+        lastSurface = surface
         lastServerCert = serverCert
         intentionalStop = false
 
@@ -247,8 +247,8 @@ class MoonlightStreamManager(
                         },
                     )
 
-                    // Set the SurfaceHolder as the render target
-                    videoRenderer?.setRenderTarget(surfaceHolder)
+                    // Set the Surface as the render target (SpatialExternalSurface path)
+                    videoRenderer?.setRenderTarget(surface)
 
                     // Create spatial audio renderer with runtime mute toggle.
                     // Uses USAGE_MEDIA + CONTENT_TYPE_MOVIE so the XR runtime spatializes
@@ -315,9 +315,9 @@ class MoonlightStreamManager(
      */
     fun reconnect(): Boolean {
         val address = lastServerAddress ?: return false
-        val holder = lastSurfaceHolder ?: return false
+        val surface = lastSurface ?: return false
         Log.i(TAG, "Reconnecting to $address")
-        startStream(address, holder, lastServerCert)
+        startStream(address, surface, lastServerCert)
         return true
     }
 
