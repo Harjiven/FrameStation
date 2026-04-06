@@ -63,6 +63,8 @@ data class WorkspaceUiState(
     val streamSettings: StreamSettings = StreamSettings(),
     val hostConfigs: List<HostConfig> = emptyList(),
     val activeHostId: String? = null,
+    /** Host IDs that currently have an open stream panel. */
+    val activeStreamHostIds: Set<String> = emptySet(),
     val showHostManager: Boolean = false,
     val discoveredHosts: List<DiscoveredHost> = emptyList(),
     val isScanning: Boolean = false,
@@ -417,6 +419,30 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleHostManager() {
         _uiState.update { it.copy(showHostManager = !it.showHostManager) }
+    }
+
+    /**
+     * Open a stream panel for the given host.
+     * No-op if the host is already streaming or does not exist.
+     */
+    fun openStream(hostId: String) {
+        _uiState.value.hostConfigs.find { it.id == hostId } ?: return
+        _uiState.update { state ->
+            state.copy(
+                activeStreamHostIds = state.activeStreamHostIds + hostId,
+                showHostManager = false,
+            )
+        }
+    }
+
+    /**
+     * Close the stream panel for the given host.
+     * No-op if the host is not currently streaming.
+     */
+    fun closeStream(hostId: String) {
+        _uiState.update { state ->
+            state.copy(activeStreamHostIds = state.activeStreamHostIds - hostId)
+        }
     }
 
     fun addHost(name: String, address: String) {

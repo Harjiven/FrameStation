@@ -59,7 +59,10 @@ import kotlin.math.roundToInt
 fun HostManagerPanel(
     hostConfigs: List<HostConfig>,
     activeHostId: String?,
+    activeStreamHostIds: Set<String> = emptySet(),
     onSelectHost: (String) -> Unit,
+    onStreamHost: (String) -> Unit = {},
+    onStopStreamHost: (String) -> Unit = {},
     onAddHost: (String, String) -> Unit,
     onRemoveHost: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -191,6 +194,21 @@ fun HostManagerPanel(
                                         )
                                     }
                                 } else null,
+                            )
+
+                            // Stream toggle chip
+                            val isStreaming = host.id in activeStreamHostIds
+                            FilterChip(
+                                selected = isStreaming,
+                                onClick = {
+                                    if (isStreaming) onStopStreamHost(host.id)
+                                    else onStreamHost(host.id)
+                                },
+                                label = { Text(if (isStreaming) "Streaming" else "Stream") },
+                                colors = if (isStreaming) FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                ) else FilterChipDefaults.filterChipColors(),
                             )
 
                             // Delete with confirmation

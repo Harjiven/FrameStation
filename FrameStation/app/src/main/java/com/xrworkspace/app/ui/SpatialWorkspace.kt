@@ -76,6 +76,8 @@ fun SpatialWorkspace(
     onTogglePairing: () -> Unit,
     onStreamingStateChanged: (Boolean) -> Unit,
     onToggleHostManager: () -> Unit = {},
+    onOpenStream: (String) -> Unit = {},
+    onCloseStream: (String) -> Unit = {},
     onAddHost: (String, String) -> Unit = { _, _ -> },
     onRemoveHost: (String) -> Unit = {},
     onSelectHost: (String) -> Unit = {},
@@ -234,7 +236,10 @@ fun SpatialWorkspace(
                 HostManagerPanel(
                     hostConfigs = uiState.hostConfigs,
                     activeHostId = uiState.activeHostId,
+                    activeStreamHostIds = uiState.activeStreamHostIds,
                     onSelectHost = onSelectHost,
+                    onStreamHost = onOpenStream,
+                    onStopStreamHost = onCloseStream,
                     onAddHost = onAddHost,
                     onRemoveHost = onRemoveHost,
                     onDismiss = onToggleHostManager,
@@ -411,6 +416,59 @@ fun SpatialWorkspace(
                     onSwitchMonitor = onToggleMonitorPicker,
                     onPresetsClick = onPresetsClick,
                 )
+            }
+        }
+
+        // Active stream panels — one SpatialPanel per streaming host
+        val activeStreamHosts = uiState.hostConfigs.filter { it.id in uiState.activeStreamHostIds }
+        if (activeStreamHosts.isNotEmpty()) {
+            if (activeStreamHosts.size == 1) {
+                // Single stream: flat offset to left of main panel
+                val host = activeStreamHosts.first()
+                SpatialPanel(
+                    modifier = SubspaceModifier
+                        .width(1400.dp)
+                        .height(900.dp)
+                        .offset(x = (-1450).dp),
+                    dragPolicy = MovePolicy(isEnabled = true),
+                    resizePolicy = ResizePolicy(isEnabled = true),
+                ) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        NativeStreamPanel(
+                            serverAddress = host.address,
+                            streamSettings = host.qualityProfile ?: uiState.streamSettings,
+                            audioSettings = uiState.audioSettings,
+                            autoReconnectEnabled = uiState.autoReconnectEnabled,
+                            onStreamingStateChanged = {},
+                        )
+                    }
+                }
+            } else {
+                // Multiple streams: arc in SpatialCurvedRow to the left of main panel
+                SpatialCurvedRow(
+                    modifier = SubspaceModifier.offset(x = (-1450).dp),
+                    curveRadius = uiState.curvedPanelSettings.radiusDp.dp,
+                ) {
+                    activeStreamHosts.forEach { host ->
+                        SpatialPanel(
+                            modifier = SubspaceModifier
+                                .width(1200.dp)
+                                .height(750.dp),
+                            dragPolicy = MovePolicy(isEnabled = true),
+                            resizePolicy = ResizePolicy(isEnabled = true),
+                        ) {
+                            Surface(modifier = Modifier.fillMaxSize()) {
+                                NativeStreamPanel(
+                                    serverAddress = host.address,
+                                    streamSettings = host.qualityProfile ?: uiState.streamSettings,
+                                    audioSettings = uiState.audioSettings,
+                                    autoReconnectEnabled = uiState.autoReconnectEnabled,
+                                    onStreamingStateChanged = {},
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
