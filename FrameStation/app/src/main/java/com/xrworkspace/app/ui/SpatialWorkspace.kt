@@ -427,10 +427,9 @@ fun SpatialWorkspace(
             }
         }
 
-        // Active stream panels — one SpatialPanel per streaming host.
-        // NOTE: currently limited to 1 simultaneous stream due to MoonBridge static JNI state.
-        // The multi-stream (forEach) branch is preserved for future use once MoonBridge is
-        // refactored to be instance-aware.
+        // Active stream panels — one SpatialPanel per streaming host (up to 3).
+        // Each stream runs in its own isolated process (:stream0/:stream1/:stream2),
+        // giving each an independent copy of libmoonlight-core.so.
         val activeStreamHosts = uiState.hostConfigs.filter { it.id in uiState.activeStreamHostIds }
         if (activeStreamHosts.isNotEmpty()) {
             // Each stream panel needs its own StreamController for toolbar integration.

@@ -22,7 +22,7 @@
 - **Surround Sound (Stereo / 5.1 / 7.1)** -- Full multi-channel support via Opus multistream. Channel configuration selectable in Settings; `SpatialAudioRenderer` creates the appropriate `AudioTrack` channel mask for 2, 6, or 8 channels. The PC's full audio output (games, desktop, system sounds) is encoded and routed through the headset.
 - **Audio Mute** -- Toggle to silence stream audio at runtime without stopping the stream.
 - **Connection Overlay** -- Displays server address, connection status, and Start Stream / Reconnect controls when not actively streaming.
-- **Multiple Simultaneous Streams** -- Up to 2 host PCs can stream simultaneously, each in its own isolated process (`:stream0`, `:stream1`) with independent `libmoonlight-core.so` state.
+- **Multiple Simultaneous Streams** -- Up to 3 host PCs can stream simultaneously, each in its own isolated process (`:stream0`, `:stream1`, `:stream2`) with independent `libmoonlight-core.so` state.
 
 ### Connection & Pairing
 
@@ -78,4 +78,4 @@
 
 - **Custom XR Ray-Cast Input** -- Direct ray-casting and coordinate mapping for `SpatialExternalSurface` panels, replacing the current touch event pipeline for more precise pointer control.
 - **Workspace Layout Presets** -- Save and recall panel arrangements (positions, sizes, which bookmarks are open) as named workspace layouts.
-- **True N-Stream Support** -- Refactor `moonlight-common-c` to be instance-aware (instance-scoped C globals instead of process-globals) to support N>2 simultaneous streams without process overhead.
+- **True N-Stream Support** -- Refactor `moonlight-common-c` to be instance-aware (instance-scoped C globals instead of process-globals) to support N>3 simultaneous streams without process overhead (~2MB per stream vs ~25MB per process).

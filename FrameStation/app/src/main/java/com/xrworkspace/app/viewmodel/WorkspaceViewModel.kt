@@ -27,6 +27,7 @@ import com.xrworkspace.app.streaming.DiscoveryManager
 import com.xrworkspace.app.streaming.ServerManager
 import com.xrworkspace.app.streaming.StreamService0
 import com.xrworkspace.app.streaming.StreamService1
+import com.xrworkspace.app.streaming.StreamService2
 import com.xrworkspace.app.streaming.StreamServiceConnection
 import com.xrworkspace.app.streaming.SunshineApiManager
 import com.xrworkspace.app.streaming.WolManager
@@ -110,11 +111,12 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     private val wolManager = WolManager()
 
     // --- Process-isolated stream service slots ---
-    // Each slot runs in its own Android process (:stream0, :stream1), giving each
+    // Each slot runs in its own Android process (:stream0, :stream1, :stream2), giving each
     // an independent copy of libmoonlight-core.so with separate C globals.
     private val streamSlots = linkedMapOf(
         ":stream0" to StreamServiceConnection(application, ":stream0", StreamService0::class.java),
         ":stream1" to StreamServiceConnection(application, ":stream1", StreamService1::class.java),
+        ":stream2" to StreamServiceConnection(application, ":stream2", StreamService2::class.java),
     )
     /** Maps hostId → processName for currently active streams. Thread-safe for Binder callbacks. */
     private val hostToSlot = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -457,7 +459,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     /**
      * Open a stream panel for the given host in an isolated service process.
-     * Assigns the host to a free slot (:stream0 or :stream1).
+     * Assigns the host to a free slot (:stream0, :stream1, or :stream2).
      * No-op if the host is already streaming, doesn't exist, or no slots are free.
      */
     fun openStream(hostId: String) {
@@ -483,6 +485,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
     }
+
 
     /**
      * Close the stream panel for the given host and stop the service process stream.

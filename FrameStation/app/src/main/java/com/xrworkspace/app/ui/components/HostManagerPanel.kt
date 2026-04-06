@@ -198,7 +198,7 @@ fun HostManagerPanel(
 
                             // Stream toggle chip — only available for paired hosts with free slots
                             val isStreaming = host.id in activeStreamHostIds
-                            val slotsAvailable = activeStreamHostIds.size < 2
+                            val slotsAvailable = activeStreamHostIds.size < 3
                             val canStream = host.isPaired && (isStreaming || slotsAvailable)
                             FilterChip(
                                 selected = isStreaming,
@@ -217,7 +217,7 @@ fun HostManagerPanel(
                             if (!isStreaming) {
                                 val hint = when {
                                     !host.isPaired -> "Pair this host first"
-                                    !slotsAvailable -> "Max 2 streams active"
+                                    !slotsAvailable -> "Max 3 streams active"
                                     else -> null
                                 }
                                 if (hint != null) {
