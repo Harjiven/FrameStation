@@ -547,7 +547,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         android.view.Surface outputSurface = (directSurface != null)
                 ? directSurface
-                : renderTarget.getSurface();
+                : (renderTarget != null ? renderTarget.getSurface() : null);
+        LimeLog.info("Output surface: "+(outputSurface != null ? outputSurface.toString() : "NULL")+" directSurface="+(directSurface != null)+" renderTarget="+(renderTarget != null));
+        if (outputSurface == null) {
+            throw new IllegalStateException("No output surface available — setRenderTarget() was never called");
+        }
         videoDecoder.configure(format, outputSurface, null, 0);
 
         configuredFormat = format;
