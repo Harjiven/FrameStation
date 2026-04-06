@@ -278,7 +278,11 @@ fun NativeStreamPanel(
             lifecycleOwner.lifecycle.removeObserver(observer)
             autoReconnectManager.stopMonitoring()
             networkMonitor.stopMonitoring()
-            streamManager?.stopStream()
+            // NOTE: Do NOT call streamManager.stopStream() here. This composable is conditionally
+            // removed from composition when streaming starts (so it doesn't cover the video panel),
+            // and stopping the stream on dispose would immediately kill the stream the user just
+            // started. Stop is only triggered by explicit user action via the toolbar Stop button
+            // (which calls stopStreaming() directly).
             onStreamingStateChanged?.invoke(false)
         }
     }

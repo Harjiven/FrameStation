@@ -395,8 +395,9 @@ fun SpatialWorkspace(
             }
 
             // Main desktop UI overlay panel — only shown when NOT streaming.
-            // While streaming, the video surface above is the main panel and this
-            // overlay is hidden so it doesn't block input/cover the video.
+            // NOTE: NativeStreamPanel's DisposableEffect.onDispose used to kill the stream
+            // when this panel was removed from composition. We patched it to only stop on
+            // explicit user action, so this conditional removal is now safe.
             if (!uiState.isStreaming) {
                 SpatialPanel(
                     modifier = SubspaceModifier
