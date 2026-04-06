@@ -179,17 +179,19 @@ class MoonlightStreamManager(
                     Log.i(TAG, "Streaming app: ${desktopApp.appName} (ID: ${desktopApp.appId})")
 
                     // Map codec preference to Moonlight video format flags.
-                    // AV1 requires both API 29+ AND a HARDWARE AV1 decoder. Probe MediaCodecList
-                    // to confirm the decoder exists before advertising AV1 support to the server,
-                    // otherwise the server may negotiate AV1 and the stream will fail.
+                    // IMPORTANT: AV1 is ONLY advertised in the format mask when the user
+                    // explicitly picks an AV1 codec. moonlight-core's findAv1Decoder() returns
+                    // null unless videoFormat == FORCE_AV1, so even if hardware AV1 exists,
+                    // it isn't actually selected. Advertising AV1 in AUTO mode causes the
+                    // server to negotiate AV1, then video stream setup fails because
+                    // av1Decoder is null. Only the explicit AV1 codec options enable AV1.
                     val av1Supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                         hasAv1Decoder()
                     Log.i(TAG, "Codec config: streamCodec=$streamCodec av1Supported=$av1Supported sdk=${Build.VERSION.SDK_INT}")
                     var videoFormats = when (streamCodec) {
                         VideoCodec.AUTO -> {
-                            var mask = MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
-                            if (av1Supported) mask = mask or MoonBridge.VIDEO_FORMAT_AV1_MAIN8
-                            mask
+                            // Do NOT advertise AV1 in AUTO mode (see comment above).
+                            MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
                         }
                         VideoCodec.H264 -> MoonBridge.VIDEO_FORMAT_H264
                         VideoCodec.H265 -> MoonBridge.VIDEO_FORMAT_H265
@@ -199,11 +201,9 @@ class MoonlightStreamManager(
                             else MoonBridge.VIDEO_FORMAT_H265_MAIN10
                     }
                     // BELT-AND-SUSPENDERS: Strip ALL AV1 bits from the mask if no AV1 decoder.
-                    // Protects against any code path or saved setting that could leave AV1 in the mask.
                     if (!av1Supported) {
                         val av1Mask = MoonBridge.VIDEO_FORMAT_AV1_MAIN8 or MoonBridge.VIDEO_FORMAT_AV1_MAIN10
                         videoFormats = videoFormats and av1Mask.inv()
-                        // Ensure we have AT LEAST one valid format
                         if (videoFormats == 0) {
                             videoFormats = MoonBridge.VIDEO_FORMAT_H265 or MoonBridge.VIDEO_FORMAT_H264
                         }
