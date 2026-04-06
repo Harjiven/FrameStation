@@ -62,6 +62,7 @@
 ### Settings & Compliance
 
 - **Curved Panel Settings** -- Enable/disable arc layout, configure arc radius (400-1600dp).
+- **Non-XR Device Fallback** -- Flat Material3 UI (`FallbackWorkspace`) shown when `isSpatialUiEnabled` is false. Displays device compatibility warning, connection info, stream settings, and bookmarks. XR feature declared `android:required="false"` so the app installs on any Android 14+ device.
 - **GPLv3 About Dialog** -- In-app "About & License" panel with copyright notice, warranty disclaimer, source availability, and third-party notices as required by GPLv3 Section 4(d).
 - **Persistence** -- All settings, layout state, bookmarks, and device ID saved across sessions.
 
@@ -80,7 +81,7 @@
 ### Long-Term
 
 - **Passthrough / Environment Toggle** -- Switch between full passthrough (see-through) and virtual environment modes from within the workspace.
-- **Non-XR Device Fallback** -- Graceful fallback UI for non-spatial Android devices, checking `isSpatialUiEnabled` before launching into Full Space mode.
+
 - **Custom XR Ray-Cast Input** -- Direct ray-casting and coordinate mapping for `SpatialExternalSurface` panels, replacing the current touch event pipeline for more precise pointer control.
 - **Workspace Layout Presets** -- Save and recall panel arrangements (positions, sizes, which bookmarks are open) as named workspace layouts.
 - **True N-Stream Support** -- Refactor `moonlight-common-c` to be instance-aware (instance-scoped C globals instead of process-globals) to support N>2 simultaneous streams without process overhead.
