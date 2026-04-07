@@ -1,3 +1,24 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Copyright (C) 2013-2024 Moonlight Game Streaming Team
+ * Copyright (C) 2026 Harjiven Dodd
+ *
+ * This file is part of FrameStation, which is distributed under the terms
+ * of the GNU General Public License version 3 or (at your option) any later
+ * version. See the COPYING file in the project root for the full license text.
+ *
+ * This file was extracted from moonlight-android
+ * (https://github.com/moonlight-stream/moonlight-android) in 2026 and may
+ * have been modified for use in FrameStation. Modifications, where present,
+ * are marked inline with `// XR-REMOVED:` or `// XR-MODIFIED:` comments and
+ * are summarized in FrameStation/MODIFICATIONS.md.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+ * for more details.
+ */
 package com.limelight.binding.video;
 
 import java.io.IOException;
@@ -261,7 +282,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     }
 
     private MediaCodecInfo findAv1Decoder(PreferenceConfiguration prefs) {
-        // FrameStationXR: Removed the FORCE_AV1-only gate that upstream Moonlight had.
+        // FrameStation: Removed the FORCE_AV1-only gate that upstream Moonlight had.
         // The whitelist + performance-point logic below already handles the AUTO case
         // correctly: only use AV1 when (a) the decoder is whitelisted as known-good,
         // (b) the user explicitly forced AV1, or (c) AV1 outperforms HEVC/H.264 at the
@@ -301,7 +322,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.renderTarget = renderTarget;
     }
 
-    /** Overload for SpatialExternalSurface — accepts a plain Surface directly. */
+    /** Overload for SpatialExternalSurface â€” accepts a plain Surface directly. */
     public void setRenderTarget(android.view.Surface surface) {
         this.directSurface = surface;
     }
@@ -555,7 +576,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 : (renderTarget != null ? renderTarget.getSurface() : null);
         LimeLog.info("Output surface: "+(outputSurface != null ? outputSurface.toString() : "NULL")+" directSurface="+(directSurface != null)+" renderTarget="+(renderTarget != null));
         if (outputSurface == null) {
-            throw new IllegalStateException("No output surface available — setRenderTarget() was never called");
+            throw new IllegalStateException("No output surface available â€” setRenderTarget() was never called");
         }
         videoDecoder.configure(format, outputSurface, null, 0);
 

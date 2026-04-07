@@ -1,0 +1,25 @@
+# FrameStation - Third-Party Notices
+
+## Moonlight Game Streaming (moonlight-android)
+- **Source:** https://github.com/moonlight-stream/moonlight-android
+- **License:** GNU General Public License v3.0
+- **Copyright:** Copyright (C) 2013-2024 Moonlight Game Streaming Team
+- **Usage:** Streaming core library extracted from moonlight-android and included
+  in the `moonlight-core` module. Modified to remove UI dependencies and add
+  XR-specific adaptations.
+
+## moonlight-common-c
+- **Source:** https://github.com/moonlight-stream/moonlight-common-c
+- **License:** GNU General Public License v3.0
+- **Copyright:** Copyright (C) 2013-2024 Moonlight Game Streaming Team
+- **Usage:** Pre-compiled native library (libmoonlight-core.so) implementing the
+  GameStream protocol. Included as a prebuilt binary.
+
+## Third-Party Libraries (via Gradle/Maven)
+- **BouncyCastle** (bcprov-jdk18on, bcpkix-jdk18on) - MIT License
+- **OkHttp** - Apache License 2.0
+- **jmDNS** - Apache License 2.0
+- **jcodec** - BSD 2-Clause License
+- **Jetpack Compose** - Apache License 2.0
+- **Jetpack XR SDK** - Apache License 2.0
+- **Android SDK** - Apache License 2.0

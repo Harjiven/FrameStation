@@ -119,8 +119,8 @@ A multi-panel spatial workspace app for Android XR that streams your PC desktop 
 
 1. **Clone the repository with submodules:**
    ```bash
-   git clone --recursive https://github.com/harjiven/FrameStationXR.git
-   cd FrameStationXR
+   git clone --recursive https://github.com/Harjiven/FrameStation.git
+   cd FrameStation
    ```
    
    If you already cloned without submodules:
@@ -188,14 +188,14 @@ A multi-panel spatial workspace app for Android XR that streams your PC desktop 
 ### Corresponding Source Availability
 
 As required by GPLv3 Section 6, the complete corresponding source is available at:
-- **Repository**: https://github.com/harjiven/FrameStationXR
+- **Repository**: https://github.com/Harjiven/FrameStation
 - **Includes**: All source code, build scripts, and moonlight-core submodule
 - **License**: GNU General Public License v3.0 or later
 
 To rebuild the exact binary:
 ```bash
-git clone --recursive https://github.com/harjiven/FrameStationXR.git
-cd FrameStationXR/FrameStation
+git clone --recursive https://github.com/Harjiven/FrameStation.git
+cd FrameStation/FrameStation
 ./gradlew assembleDebug
 ```
 

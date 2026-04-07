@@ -1,3 +1,24 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Copyright (C) 2013-2024 Moonlight Game Streaming Team
+ * Copyright (C) 2026 Harjiven Dodd
+ *
+ * This file is part of FrameStation, which is distributed under the terms
+ * of the GNU General Public License version 3 or (at your option) any later
+ * version. See the COPYING file in the project root for the full license text.
+ *
+ * This file was extracted from moonlight-android
+ * (https://github.com/moonlight-stream/moonlight-android) in 2026 and may
+ * have been modified for use in FrameStation. Modifications, where present,
+ * are marked inline with `// XR-REMOVED:` or `// XR-MODIFIED:` comments and
+ * are summarized in FrameStation/MODIFICATIONS.md.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+ * for more details.
+ */
 package com.limelight.binding.audio;
 
 import android.content.Context;
@@ -187,7 +208,7 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void playDecodedAudio(short[] audioData) {
-        if (track == null) return; // setup() failed — discard silently
+        if (track == null) return; // setup() failed â€” discard silently
         // Only queue up to 40 ms of pending audio data in addition to what AudioTrack is buffering for us.
         if (MoonBridge.getPendingAudioDuration() < 40) {
             // This will block until the write is completed. That can cause a backlog
@@ -225,7 +246,7 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void cleanup() {
-        if (track == null) return; // setup() failed — nothing to clean up
+        if (track == null) return; // setup() failed â€” nothing to clean up
         // Immediately drop all pending data
         track.pause();
         track.flush();

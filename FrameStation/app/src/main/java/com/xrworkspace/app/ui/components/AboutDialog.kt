@@ -3,10 +3,13 @@
 
 package com.xrworkspace.app.ui.components
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,21 +26,104 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * Reads a UTF-8 text asset bundled in the APK at `app/src/main/assets/<name>`.
+ * Returns the file contents, or an error message if the asset is missing.
+ *
+ * Used to satisfy GPLv3 Section 4: the COPYING and NOTICE files ship inside the
+ * APK as assets so the end user can read the full license text offline, without
+ * needing internet access or trusting an external link.
+ */
+private fun readAssetText(context: Context, assetName: String): String =
+    runCatching {
+        context.assets.open(assetName).bufferedReader(Charsets.UTF_8).use { it.readText() }
+    }.getOrElse { e ->
+        "Error: could not read bundled asset '$assetName' (${e.message}).\n\n" +
+            "If you are seeing this message in a release build, please report it as a bug. " +
+            "The full GPLv3 license text is also available at https://www.gnu.org/licenses/gpl-3.0.html"
+    }
 
 /**
  * About dialog displaying GPLv3 compliance information as required by Section 4(d).
  * Shows copyright notice, license information, and appropriate legal notices.
+ *
+ * The full GPLv3 license text and the third-party NOTICE file are bundled inside
+ * the APK at `assets/COPYING` and `assets/NOTICE` respectively, and are displayed
+ * here without requiring any network access.
  */
 @Composable
 fun AboutDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    
+    var showFullLicense by remember { mutableStateOf(false) }
+    var showNotice by remember { mutableStateOf(false) }
+
+    // When viewing the full license or NOTICE, render the asset full-screen in a
+    // scrollable monospace view and offer a Back button to return to the summary.
+    if (showFullLicense || showNotice) {
+        val title = if (showFullLicense) "GNU General Public License v3.0" else "Third-Party Notices"
+        val assetName = if (showFullLicense) "COPYING" else "NOTICE"
+        val text = remember(assetName) { readAssetText(context, assetName) }
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            tonalElevation = 4.dp,
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = true)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(12.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                        ),
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    OutlinedButton(onClick = {
+                        showFullLicense = false
+                        showNotice = false
+                    }) {
+                        Text("Back")
+                    }
+                }
+            }
+        }
+        return
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         tonalElevation = 4.dp,
@@ -123,18 +209,13 @@ fun AboutDialog(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     
-                    // Link to full license
+                    // Link to full license — reads bundled assets/COPYING (offline, no network)
                     Text(
-                        text = "📄 View Full GPLv3 License",
+                        text = "📄 View Full GPLv3 License (offline)",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .clickable {
-                                // License text is in COPYING file - show it in an external viewer or web
-                                val licenseUrl = "https://www.gnu.org/licenses/gpl-3.0.html"
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(licenseUrl))
-                                context.startActivity(intent)
-                            }
+                            .clickable { showFullLicense = true }
                             .padding(vertical = 4.dp),
                     )
                 }
@@ -183,11 +264,11 @@ fun AboutDialog(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = "https://github.com/harjiven/FrameStationXR",
+                        text = "https://github.com/Harjiven/FrameStation",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable {
-                            val repoUrl = "https://github.com/harjiven/FrameStationXR"
+                            val repoUrl = "https://github.com/Harjiven/FrameStation"
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(repoUrl))
                             context.startActivity(intent)
                         },
@@ -238,6 +319,16 @@ fun AboutDialog(
                                 "• Jetpack Compose • Jetpack XR SDK • Android SDK",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // Link to full third-party NOTICE — reads bundled assets/NOTICE (offline)
+                    Text(
+                        text = "📄 View Full Third-Party Notices (offline)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { showNotice = true }
+                            .padding(vertical = 4.dp),
                     )
                 }
             }

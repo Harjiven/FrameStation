@@ -64,7 +64,7 @@ class DiscoveryManager(private val context: Context?) : MdnsDiscoveryListener {
         _discoveryError.value = null
         try {
             val wifi = context?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            multicastLock = wifi?.createMulticastLock("FrameStationXR.mDNS")?.apply {
+            multicastLock = wifi?.createMulticastLock("FrameStation.mDNS")?.apply {
                 setReferenceCounted(true)
                 acquire()
             }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Network security policy for FrameStationXR.
+    Network security policy for FrameStation.
 
     This app acts as a spatial browser and streaming client. The WebView must be
     able to reach any site the user navigates to (HTTP or HTTPS), so cleartext is
