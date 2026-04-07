@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,8 @@ import com.xrworkspace.app.viewmodel.WolState
 import com.xrworkspace.app.viewmodel.WorkspaceUiState
 import java.io.File
 import kotlinx.coroutines.launch
+
+private const val TAG = "SpatialWorkspace"
 
 // --- Layout constants (dp) ---
 // Main desktop panel — standalone, inside the SpatialColumn
@@ -162,7 +165,7 @@ fun SpatialWorkspace(
     LaunchedEffect(uiState.isPassthroughActive) {
         // Note: SpatialEnvironment passthrough API access depends on scenecore version.
         // The preferred opacity will be applied when the correct API path is confirmed.
-        Log.d("SpatialWorkspace", "Passthrough requested: ${uiState.isPassthroughActive}")
+        Log.d(TAG, "Passthrough requested: ${uiState.isPassthroughActive}")
     }
     
     Subspace {
@@ -376,11 +379,11 @@ fun SpatialWorkspace(
                 streamWidth = uiState.streamSettings.resolution.width,
                 streamHeight = uiState.streamSettings.resolution.height,
                 onSurfaceCreated = { surface ->
-                    Log.d("SpatialWorkspace", "Video surface created")
+                    Log.d(TAG, "Video surface created")
                     mainSurfaceRef = surface
                 },
                 onSurfaceDestroyed = {
-                    Log.d("SpatialWorkspace", "Video surface destroyed")
+                    Log.d(TAG, "Video surface destroyed")
                     mainSurfaceRef = null
                 },
             )
@@ -545,25 +548,29 @@ fun SpatialWorkspace(
 
             // Render a StreamVideoSurface for each active host so each gets its own Surface.
             // These sit at the same position as the NativeStreamPanel below for visual overlay.
+            // key(host.id) gives each surface stable identity so reordering/adding/removing
+            // hosts does not destroy and recreate every other host's Surface.
             activeStreamHosts.forEach { host ->
-                val hostStreamSettings = host.qualityProfile ?: uiState.streamSettings
-                StreamVideoSurface(
-                    streamServiceConnection = onGetStreamSlot(host.id),
-                    isConnected = true,  // assume connected for IPC path
-                    panelWidthDp = if (activeStreamHosts.size == 1) MAIN_PANEL_WIDTH_DP else MULTI_STREAM_PANEL_WIDTH_DP,
-                    panelHeightDp = if (activeStreamHosts.size == 1) MAIN_PANEL_HEIGHT_DP else MULTI_STREAM_PANEL_HEIGHT_DP,
-                    offsetYDp = VIDEO_PANEL_Y_OFFSET_DP,
-                    streamWidth = hostStreamSettings.resolution.width,
-                    streamHeight = hostStreamSettings.resolution.height,
-                    onSurfaceCreated = { surface ->
-                        Log.d("SpatialWorkspace", "Multi-stream surface created for ${host.id}")
-                        multiStreamSurfaces[host.id] = surface
-                    },
-                    onSurfaceDestroyed = {
-                        Log.d("SpatialWorkspace", "Multi-stream surface destroyed for ${host.id}")
-                        multiStreamSurfaces[host.id] = null
-                    },
-                )
+                key(host.id) {
+                    val hostStreamSettings = host.qualityProfile ?: uiState.streamSettings
+                    StreamVideoSurface(
+                        streamServiceConnection = onGetStreamSlot(host.id),
+                        isConnected = true,  // assume connected for IPC path
+                        panelWidthDp = if (activeStreamHosts.size == 1) MAIN_PANEL_WIDTH_DP else MULTI_STREAM_PANEL_WIDTH_DP,
+                        panelHeightDp = if (activeStreamHosts.size == 1) MAIN_PANEL_HEIGHT_DP else MULTI_STREAM_PANEL_HEIGHT_DP,
+                        offsetYDp = VIDEO_PANEL_Y_OFFSET_DP,
+                        streamWidth = hostStreamSettings.resolution.width,
+                        streamHeight = hostStreamSettings.resolution.height,
+                        onSurfaceCreated = { surface ->
+                            Log.d(TAG, "Multi-stream surface created for ${host.id}")
+                            multiStreamSurfaces[host.id] = surface
+                        },
+                        onSurfaceDestroyed = {
+                            Log.d(TAG, "Multi-stream surface destroyed for ${host.id}")
+                            multiStreamSurfaces[host.id] = null
+                        },
+                    )
+                }
             }
 
             if (activeStreamHosts.size == 1) {
@@ -600,28 +607,30 @@ fun SpatialWorkspace(
                     curveRadius = uiState.curvedPanelSettings.radiusDp.dp,
                 ) {
                     activeStreamHosts.forEach { host ->
-                        val hostController = streamPanelControllers[host.id] ?: StreamController()
-                        var arcPanelWidthDp by remember(host.id) { mutableFloatStateOf(MULTI_STREAM_PANEL_WIDTH_DP) }
-                        var arcPanelHeightDp by remember(host.id) { mutableFloatStateOf(MULTI_STREAM_PANEL_HEIGHT_DP) }
-                        SpatialPanel(
-                            modifier = SubspaceModifier
-                                .width(MULTI_STREAM_PANEL_WIDTH_DP.dp)
-                                .height(MULTI_STREAM_PANEL_HEIGHT_DP.dp),
-                            dragPolicy = MovePolicy(isEnabled = true),
-                            resizePolicy = ResizePolicy(isEnabled = true),
-                        ) {
-                            NativeStreamPanel(
-                                serverAddress = host.address,
-                                streamSettings = host.qualityProfile ?: uiState.streamSettings,
-                                audioSettings = uiState.audioSettings,
-                                autoReconnectEnabled = uiState.autoReconnectEnabled,
-                                onStreamingStateChanged = {},
-                                streamController = hostController,
-                                streamServiceConnection = onGetStreamSlot(host.id),
-                                panelWidthDp = arcPanelWidthDp,
-                                panelHeightDp = arcPanelHeightDp,
-                                externalSurfaceRef = multiStreamSurfaces[host.id],
-                            )
+                        key(host.id) {
+                            val hostController = streamPanelControllers[host.id] ?: StreamController()
+                            var arcPanelWidthDp by remember(host.id) { mutableFloatStateOf(MULTI_STREAM_PANEL_WIDTH_DP) }
+                            var arcPanelHeightDp by remember(host.id) { mutableFloatStateOf(MULTI_STREAM_PANEL_HEIGHT_DP) }
+                            SpatialPanel(
+                                modifier = SubspaceModifier
+                                    .width(MULTI_STREAM_PANEL_WIDTH_DP.dp)
+                                    .height(MULTI_STREAM_PANEL_HEIGHT_DP.dp),
+                                dragPolicy = MovePolicy(isEnabled = true),
+                                resizePolicy = ResizePolicy(isEnabled = true),
+                            ) {
+                                NativeStreamPanel(
+                                    serverAddress = host.address,
+                                    streamSettings = host.qualityProfile ?: uiState.streamSettings,
+                                    audioSettings = uiState.audioSettings,
+                                    autoReconnectEnabled = uiState.autoReconnectEnabled,
+                                    onStreamingStateChanged = {},
+                                    streamController = hostController,
+                                    streamServiceConnection = onGetStreamSlot(host.id),
+                                    panelWidthDp = arcPanelWidthDp,
+                                    panelHeightDp = arcPanelHeightDp,
+                                    externalSurfaceRef = multiStreamSurfaces[host.id],
+                                )
+                            }
                         }
                     }
                 }
@@ -637,11 +646,43 @@ fun SpatialWorkspace(
                 curveRadius = curvedSettings.radiusDp.dp,
             ) {
                 openBookmarks.forEach { bookmark ->
+                    key(bookmark.id) {
+                        SpatialPanel(
+                            modifier = SubspaceModifier
+                                .alpha(animatedAlpha.value)
+                                .width(500.dp)
+                                .height(430.dp),
+                            dragPolicy = MovePolicy(isEnabled = true),
+                            resizePolicy = ResizePolicy(isEnabled = true),
+                        ) {
+                            Surface(modifier = Modifier.fillMaxSize()) {
+                                BookmarkWebViewPanel(
+                                    bookmark = bookmark,
+                                    onClose = { onToggleBookmark(bookmark.id) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Flat grid: columns of 2 panels
+            openBookmarks.forEachIndexed { index, bookmark ->
+                key(bookmark.id) {
+                    val column = index / 2
+                    val row = index % 2
+                    val xOffsetDp = (BOOKMARK_PANEL_OFFSET_X + column * BOOKMARK_GRID_COL_SPACING).toFloat()
+                    val yOffsetDp = (if (row == 0) BOOKMARK_GRID_ROW_OFFSET else -BOOKMARK_GRID_ROW_OFFSET).toFloat()
+
                     SpatialPanel(
                         modifier = SubspaceModifier
                             .alpha(animatedAlpha.value)
                             .width(500.dp)
-                            .height(430.dp),
+                            .height(430.dp)
+                            .offset(
+                                x = xOffsetDp.dp,
+                                y = yOffsetDp.dp,
+                            ),
                         dragPolicy = MovePolicy(isEnabled = true),
                         resizePolicy = ResizePolicy(isEnabled = true),
                     ) {
@@ -651,34 +692,6 @@ fun SpatialWorkspace(
                                 onClose = { onToggleBookmark(bookmark.id) },
                             )
                         }
-                    }
-                }
-            }
-        } else {
-            // Flat grid: columns of 2 panels
-            openBookmarks.forEachIndexed { index, bookmark ->
-                val column = index / 2
-                val row = index % 2
-                val xOffsetDp = (BOOKMARK_PANEL_OFFSET_X + column * BOOKMARK_GRID_COL_SPACING).toFloat()
-                val yOffsetDp = (if (row == 0) BOOKMARK_GRID_ROW_OFFSET else -BOOKMARK_GRID_ROW_OFFSET).toFloat()
-
-                SpatialPanel(
-                    modifier = SubspaceModifier
-                        .alpha(animatedAlpha.value)
-                        .width(500.dp)
-                        .height(430.dp)
-                        .offset(
-                            x = xOffsetDp.dp,
-                            y = yOffsetDp.dp,
-                        ),
-                    dragPolicy = MovePolicy(isEnabled = true),
-                    resizePolicy = ResizePolicy(isEnabled = true),
-                ) {
-                    Surface(modifier = Modifier.fillMaxSize()) {
-                        BookmarkWebViewPanel(
-                            bookmark = bookmark,
-                            onClose = { onToggleBookmark(bookmark.id) },
-                        )
                     }
                 }
             }

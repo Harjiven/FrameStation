@@ -736,7 +736,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             )
             result.fold(
                 onSuccess = {
-                    Log.i("WorkspaceVM", "WoL packet sent to ${state.serverAddress} ($mac)")
+                    Log.i(TAG, "WoL packet sent to ${state.serverAddress} ($mac)")
                     _uiState.update { it.copy(wolState = WolState.Sent, wolError = null) }
                 },
                 onFailure = { e ->
@@ -763,7 +763,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         val ids = _uiState.value.openBookmarkIds.filter { id ->
             _uiState.value.bookmarks.any { it.id == id && !it.isEphemeral }
         }.toSet()
-        Log.d("WorkspaceVM", "Auto-saving open bookmarks: $ids")
+        Log.d(TAG, "Auto-saving open bookmarks: $ids")
         sharedPreferences.edit().putStringSet("open_bookmark_ids", ids).apply()
     }
 
@@ -806,7 +806,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             sunshineApiManager.fetchMonitors(address, username, password)
                 .onSuccess { monitors ->
-                    Log.i("WorkspaceVM", "Loaded ${monitors.size} monitors from $address")
+                    Log.i(TAG, "Loaded ${monitors.size} monitors from $address")
                     _uiState.update { it.copy(monitors = monitors, isLoadingMonitors = false) }
                 }
                 .onFailure { e ->
@@ -836,7 +836,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 password = state.sunshinePassword,
                 systemName = monitor.systemName,
             ).onSuccess {
-                Log.i("WorkspaceVM", "Switched to monitor ${monitor.displayName}")
+                Log.i(TAG, "Switched to monitor ${monitor.displayName}")
                 // Update local list to reflect new active state
                 val updated = state.monitors.map { m ->
                     m.copy(isActive = m.systemName == monitor.systemName)

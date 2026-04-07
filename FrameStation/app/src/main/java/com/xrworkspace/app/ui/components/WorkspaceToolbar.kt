@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -137,11 +138,13 @@ fun WorkspaceToolbar(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                 )
                 openBookmarks.forEach { bookmark ->
-                    FilterChip(
-                        selected = true,
-                        onClick = { onToggleBookmark(bookmark.id) },
-                        label = { Text(bookmark.name) },
-                    )
+                    key(bookmark.id) {
+                        FilterChip(
+                            selected = true,
+                            onClick = { onToggleBookmark(bookmark.id) },
+                            label = { Text(bookmark.name) },
+                        )
+                    }
                 }
             }
 

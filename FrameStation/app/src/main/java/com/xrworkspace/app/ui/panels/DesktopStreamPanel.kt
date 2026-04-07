@@ -14,6 +14,8 @@ import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.viewinterop.AndroidView
 
+private const val TAG = "DesktopStream"
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun DesktopStreamPanel(streamUrl: String) {
@@ -28,7 +30,7 @@ fun DesktopStreamPanel(streamUrl: String) {
                 webChromeClient = object : WebChromeClient() {
                     override fun onPermissionRequest(request: PermissionRequest?) {
                         request?.let { req ->
-                            Log.d("DesktopStream", "Permission requested: ${req.resources.toList()}")
+                            Log.d(TAG, "Permission requested: ${req.resources.toList()}")
                             req.grant(req.resources)
                         }
                     }

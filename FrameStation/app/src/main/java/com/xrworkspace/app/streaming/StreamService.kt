@@ -40,6 +40,10 @@ open class StreamService : Service() {
     @Volatile private var streamManager: MoonlightStreamManager? = null
     private val managerLock = Any()
 
+    // Reused across startStream() calls so we don't allocate (and leak) a Handler
+    // every time the UI process kicks off a new stream.
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     // RemoteCallbackList safely handles death of client processes
     private val clients = RemoteCallbackList<IStreamServiceClient>()
 
@@ -62,7 +66,7 @@ open class StreamService : Service() {
             val audioSettings = parseAudioSettings(audioSettingsJson)
 
             // MoonlightStreamManager must be created on the main thread (Android API requirement)
-            Handler(Looper.getMainLooper()).post {
+            mainHandler.post {
                 synchronized(managerLock) {
                     if (streamManager != null) return@post  // stopStream() raced with us
                     val manager = MoonlightStreamManager(applicationContext, prefs)
@@ -151,6 +155,9 @@ open class StreamService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Drain any pending startStream callbacks before tearing down so they don't
+        // try to create a manager against a dead service.
+        mainHandler.removeCallbacksAndMessages(null)
         streamManager?.stopStream()
         streamManager = null
         clients.kill()

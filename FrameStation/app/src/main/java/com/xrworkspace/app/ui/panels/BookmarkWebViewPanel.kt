@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.xrworkspace.app.model.Bookmark
 
+private const val TAG = "BookmarkWebView"
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BookmarkWebViewPanel(
@@ -78,8 +80,12 @@ fun BookmarkWebViewPanel(
             .build()
     }
 
+    // AudioManager is process-wide; cache the lookup so we don't hit getSystemService
+    // and the cast every time bookmark.id changes.
+    val audioManager = remember {
+        context.getSystemService(android.content.Context.AUDIO_SERVICE) as? AudioManager
+    }
     DisposableEffect(bookmark.id) {
-        val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as? AudioManager
         audioManager?.requestAudioFocus(audioFocusRequest)
         onDispose { audioManager?.abandonAudioFocusRequest(audioFocusRequest) }
     }
@@ -245,7 +251,7 @@ fun BookmarkWebViewPanel(
                                     r == PermissionRequest.RESOURCE_VIDEO_CAPTURE
                                 }.toTypedArray()
                                 if (granted.isNotEmpty()) {
-                                    Log.d("BookmarkWebView", "Granting DRM/media permissions: ${granted.toList()}")
+                                    Log.d(TAG, "Granting DRM/media permissions: ${granted.toList()}")
                                     req.grant(granted)
                                 } else {
                                     req.deny()

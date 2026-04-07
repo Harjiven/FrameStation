@@ -11,6 +11,8 @@ import androidx.activity.enableEdgeToEdge
 import com.xrworkspace.app.ui.XRWorkspaceApp
 import com.xrworkspace.app.ui.theme.FrameStationTheme
 
+private const val TAG = "MainActivity"
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -19,9 +21,9 @@ class MainActivity : ComponentActivity() {
         // Verify Moonlight native library loads
         try {
             System.loadLibrary("moonlight-core")
-            Log.i("FrameStation", "SUCCESS: libmoonlight-core.so loaded successfully")
+            Log.i(TAG, "SUCCESS: libmoonlight-core.so loaded successfully")
         } catch (e: UnsatisfiedLinkError) {
-            Log.e("FrameStation", "FAILED: libmoonlight-core.so failed to load", e)
+            Log.e(TAG, "FAILED: libmoonlight-core.so failed to load", e)
         }
 
         setContent {
