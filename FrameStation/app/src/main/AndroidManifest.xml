@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Forward server-triggered gamepad rumble to the headset via the Vibrator API. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.software.xr.api.spatial" android:required="false" />
 
     <application

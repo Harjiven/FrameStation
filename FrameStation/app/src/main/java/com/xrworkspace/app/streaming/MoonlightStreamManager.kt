@@ -8,6 +8,9 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import android.view.Surface
 import com.limelight.binding.PlatformBinding
@@ -75,6 +78,22 @@ class MoonlightStreamManager(
     private val dataDir = context.filesDir
     private val mainHandler = Handler(Looper.getMainLooper())
     private val streamLock = Any()
+
+    /** System Vibrator for forwarding gamepad rumble events to the headset. */
+    private val vibrator: Vibrator? by lazy {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = appContext.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vm?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire Vibrator service", e)
+            null
+        }
+    }
 
     private var connection: NvConnection? = null
     private var videoRenderer: MediaCodecDecoderRenderer? = null
@@ -562,13 +581,73 @@ class MoonlightStreamManager(
 
     override fun displayTransientMessage(message: String) {
         Log.i(TAG, "Transient message: $message")
+        // Surface to UI via the same channel as displayMessage so brief server notices
+        // (e.g., "Video bitrate adjusted", "Network congestion detected") are visible.
+        mainHandler.post { onStageChanged?.invoke(message) }
     }
 
-    override fun rumble(controllerNumber: Short, lowFreqMotor: Short, highFreqMotor: Short) {}
-    override fun rumbleTriggers(controllerNumber: Short, leftTrigger: Short, rightTrigger: Short) {}
+    /**
+     * Forward server-triggered gamepad rumble to the device Vibrator.
+     * Low-freq and high-freq motor intensities are mixed to a single amplitude
+     * (proportional to the stronger of the two) since Android's Vibrator has
+     * a single channel on most devices.
+     *
+     * [controllerNumber] is ignored — all controllers share the one headset vibrator.
+     */
+    override fun rumble(controllerNumber: Short, lowFreqMotor: Short, highFreqMotor: Short) {
+        val vib = vibrator ?: return
+        // Moonlight sends unsigned 16-bit values (0..65535); higher = stronger.
+        val low = lowFreqMotor.toInt() and 0xFFFF
+        val high = highFreqMotor.toInt() and 0xFFFF
+        val intensity = maxOf(low, high)
+        try {
+            if (intensity == 0) {
+                vib.cancel()
+                return
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Map 0..65535 to 1..255 Android amplitude range
+                val amplitude = ((intensity.toLong() * 255) / 65535).toInt().coerceIn(1, 255)
+                vib.vibrate(VibrationEffect.createOneShot(50L, amplitude))
+            } else {
+                @Suppress("DEPRECATION")
+                vib.vibrate(50L)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Vibrator rumble failed", e)
+        }
+    }
+
+    /**
+     * Adaptive trigger haptics (PS5 DualSense style). No-op: Galaxy XR controllers and
+     * standard Bluetooth gamepads lack adaptive-trigger actuators. Implement when
+     * [android.os.VibratorManager] exposes per-trigger vibrators (API 31+ on supported
+     * hardware) or when the XR controller API surfaces adaptive trigger state.
+     */
+    override fun rumbleTriggers(controllerNumber: Short, leftTrigger: Short, rightTrigger: Short) {
+        // No-op: see KDoc.
+    }
+
     override fun setHdrMode(enabled: Boolean, hdrMetadata: ByteArray?) {
         Log.i(TAG, "HDR mode: enabled=$enabled, metadata=${hdrMetadata?.size ?: 0} bytes")
     }
-    override fun setMotionEventState(controllerNumber: Short, motionType: Byte, reportRateHz: Short) {}
-    override fun setControllerLED(controllerNumber: Short, r: Byte, g: Byte, b: Byte) {}
+
+    /**
+     * Server requests a specific motion-event (gyro/accelerometer) report rate for a controller.
+     * No-op: motion event forwarding is not yet implemented. Standard Bluetooth gamepads don't
+     * expose gyro/accel to Android; XR controllers do but require integration with the Jetpack
+     * XR input pipeline, which is a larger feature than this listener can address.
+     */
+    override fun setMotionEventState(controllerNumber: Short, motionType: Byte, reportRateHz: Short) {
+        // No-op: see KDoc.
+    }
+
+    /**
+     * Server sets the controller LED color (e.g., DualSense lightbar).
+     * No-op: XR controllers have no RGB LEDs to address, and the Android gamepad API does
+     * not expose LED control to applications.
+     */
+    override fun setControllerLED(controllerNumber: Short, r: Byte, g: Byte, b: Byte) {
+        // No-op: see KDoc.
+    }
 }
