@@ -53,6 +53,7 @@ import com.xrworkspace.app.model.Resolution
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.model.VideoCodec
 import com.xrworkspace.app.model.recommendedBitrateKbps
+import com.xrworkspace.app.util.formatBitrate
 import kotlin.math.roundToInt
 
 @Composable
@@ -433,7 +434,7 @@ private fun QualityProfileEditorDialog(
 
                 // Bitrate slider
                 Text(
-                    text = "Bitrate: ${formatBitrateLabel(bitrateKbps.roundToInt())}",
+                                            text = "Bitrate: ${formatBitrate(bitrateKbps.roundToInt())}",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Slider(
@@ -447,7 +448,7 @@ private fun QualityProfileEditorDialog(
                         bitrateKbps = recommendedBitrateKbps(selectedResolution, selectedFps).toFloat()
                     },
                 ) {
-                    Text("Use Recommended (${formatBitrateLabel(recommendedBitrateKbps(selectedResolution, selectedFps))})")
+                                            Text("Use Recommended (${formatBitrate(recommendedBitrateKbps(selectedResolution, selectedFps))})")
                 }
 
                 // Codec dropdown
@@ -514,18 +515,8 @@ private fun formatCodecShort(codec: VideoCodec): String = when (codec) {
     VideoCodec.AV1_MAIN10 -> "AV1 10-bit"
 }
 
-private fun formatBitrateLabel(kbps: Int): String {
-    return if (kbps >= 1000) {
-        val mbps = kbps / 1000.0
-        if (mbps == mbps.toLong().toDouble()) {
-            "${mbps.toLong()} Mbps"
-        } else {
-            "${"%.1f".format(mbps)} Mbps"
-        }
-    } else {
-        "$kbps kbps"
-    }
-}
+// formatBitrate moved to com.xrworkspace.app.util.FormatUtils so SettingsDialog,
+// HostManagerPanel, and FallbackWorkspace can share a single implementation.
 
 private fun formatLastConnected(timestamp: Long): String {
     val now = System.currentTimeMillis()

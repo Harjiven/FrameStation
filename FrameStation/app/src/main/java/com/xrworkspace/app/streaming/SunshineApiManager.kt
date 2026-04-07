@@ -48,11 +48,44 @@ class SunshineApiManager {
     private fun getOrBuildClient(username: String, password: String): OkHttpClient {
         val creds = username to password
         if (cachedClient == null || cachedCreds != creds) {
-            cachedClient?.connectionPool?.evictAll()
+            cachedClient?.let { releaseClient(it) }
             cachedClient = buildClient(username, password)
             cachedCreds = creds
         }
-        return cachedClient!!
+        return cachedClient ?: error("buildClient returned null — should not happen")
+    }
+
+    /**
+     * Release every resource held by an OkHttpClient: connection pool, dispatcher
+     * thread executor, and cache (if any). After this call the client must not be
+     * reused.
+     *
+     * OkHttp's idle threads die after ~60s on their own, so skipping this is not
+     * catastrophic, but explicit shutdown is the documented best practice and lets
+     * the JVM reclaim the executor thread immediately.
+     */
+    private fun releaseClient(client: OkHttpClient) {
+        try { client.connectionPool.evictAll() } catch (e: Exception) {
+            Log.w(TAG, "evictAll failed during client release", e)
+        }
+        try { client.dispatcher.executorService.shutdown() } catch (e: Exception) {
+            Log.w(TAG, "dispatcher shutdown failed during client release", e)
+        }
+        try { client.cache?.close() } catch (e: Exception) {
+            Log.w(TAG, "cache close failed during client release", e)
+        }
+    }
+
+    /**
+     * Release the cached OkHttpClient (if any). Call this from the owning
+     * lifecycle component's teardown (e.g. ViewModel.onCleared()) so we don't
+     * leave executor threads or socket pools alive after the manager is no
+     * longer reachable.
+     */
+    fun shutdown() {
+        cachedClient?.let { releaseClient(it) }
+        cachedClient = null
+        cachedCreds = null
     }
 
     // ------------------------------------------------------------------------------------

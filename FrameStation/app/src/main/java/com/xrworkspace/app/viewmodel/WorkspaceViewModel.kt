@@ -533,8 +533,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             try { slot.stopStream() } catch (_: Exception) {}
             slot.unbind()
         }
-        // SunshineApiManager uses a per-call OkHttpClient with no persistent state;
-        // in-flight coroutines are cancelled automatically by viewModelScope teardown.
+        // SunshineApiManager caches an OkHttpClient between calls; explicitly shut
+        // it down so the connection pool and dispatcher executor are released
+        // immediately rather than waiting for the JVM to reclaim them.
+        sunshineApiManager.shutdown()
     }
 
     // --- Host config management ---

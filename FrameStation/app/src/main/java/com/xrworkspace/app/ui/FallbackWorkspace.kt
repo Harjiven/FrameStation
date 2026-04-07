@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.xrworkspace.app.util.formatBitrate
 import com.xrworkspace.app.viewmodel.WorkspaceUiState
 
 /**
@@ -168,7 +169,7 @@ fun FallbackWorkspace(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = "Bitrate: ${formatBitrateFallback(uiState.streamSettings.bitrateKbps)}",
+                            text = "Bitrate: ${formatBitrate(uiState.streamSettings.bitrateKbps)}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
@@ -235,6 +236,5 @@ fun FallbackWorkspace(
     }
 }
 
-private fun formatBitrateFallback(kbps: Int): String =
-    if (kbps >= 1000) "${"%.1f".format(kbps / 1000.0).trimEnd('0').trimEnd('.')} Mbps"
-    else "$kbps kbps"
+// formatBitrate moved to com.xrworkspace.app.util.FormatUtils so SettingsDialog,
+// HostManagerPanel, and FallbackWorkspace can share a single implementation.

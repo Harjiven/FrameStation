@@ -82,6 +82,13 @@ class DiscoveryManager(private val context: Context?) : MdnsDiscoveryListener {
             Log.e(TAG, "Failed to start discovery", e)
             _discoveryError.value = e.message ?: "Failed to start network discovery"
             _isScanning.value = false
+            // Release the multicast lock we acquired above so a failed discovery
+            // attempt doesn't leave the Wi-Fi multicast subsystem held open until
+            // the next stopDiscovery() call.
+            try { multicastLock?.release() } catch (re: Exception) {
+                Log.w(TAG, "Multicast lock release failed after discovery start error", re)
+            }
+            multicastLock = null
         }
     }
 

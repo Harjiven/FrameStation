@@ -48,6 +48,7 @@ import com.xrworkspace.app.model.Resolution
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.model.VideoCodec
 import com.xrworkspace.app.model.recommendedBitrateKbps
+import com.xrworkspace.app.util.formatBitrate
 import android.os.Build
 import kotlin.math.roundToInt
 
@@ -513,18 +514,5 @@ fun SettingsPanel(
     }
 }
 
-/**
- * Formats a bitrate in kbps to a human-readable string (e.g., "20 Mbps" or "1500 kbps").
- */
-private fun formatBitrate(kbps: Int): String {
-    return if (kbps >= 1000) {
-        val mbps = kbps / 1000.0
-        if (mbps == mbps.toLong().toDouble()) {
-            "${mbps.toLong()} Mbps"
-        } else {
-            "${"%.1f".format(mbps)} Mbps"
-        }
-    } else {
-        "$kbps kbps"
-    }
-}
+// formatBitrate moved to com.xrworkspace.app.util.FormatUtils so SettingsDialog,
+// HostManagerPanel, and FallbackWorkspace can share a single implementation.
