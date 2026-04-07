@@ -49,12 +49,10 @@ import com.xrworkspace.app.model.HostConfig
 import com.xrworkspace.app.model.ServerApp
 import com.xrworkspace.app.model.StreamSettings
 import com.xrworkspace.app.model.WorkspaceLayout
-import com.xrworkspace.app.streaming.DiscoveredHost
 import com.xrworkspace.app.streaming.StreamServiceConnection
 import com.xrworkspace.app.ui.components.AboutDialog
 import com.xrworkspace.app.ui.components.AppSelectorPanel
 import com.xrworkspace.app.ui.components.BookmarkManagerPanel
-import com.xrworkspace.app.ui.components.DiscoveryPanel
 import com.xrworkspace.app.ui.components.HostManagerPanel
 import com.xrworkspace.app.ui.components.LayoutPresetsPanel
 import com.xrworkspace.app.ui.components.MonitorPickerPanel
@@ -73,6 +71,20 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 // --- Layout constants (dp) ---
+// Main desktop panel — standalone, inside the SpatialColumn
+private const val MAIN_PANEL_WIDTH_DP = 1400f
+private const val MAIN_PANEL_HEIGHT_DP = 900f
+// Multi-stream arc panels — smaller so multiple fit side-by-side
+private const val MULTI_STREAM_PANEL_WIDTH_DP = 1200f
+private const val MULTI_STREAM_PANEL_HEIGHT_DP = 750f
+// Toolbar panel below the main panel
+private const val TOOLBAR_PANEL_WIDTH_DP = 900
+private const val TOOLBAR_PANEL_HEIGHT_DP = 140
+// Video panel Y-offset to align with the main panel slot inside SpatialColumn.
+// The column centers [main panel(900) + toolbar(140)] = 1040dp around y=0,
+// so the main panel center sits at y = +70 (toolbar takes 140 below).
+private const val VIDEO_PANEL_Y_OFFSET_DP = 70f
+// Horizontal offsets for bookmark / secondary-stream panel arcs around the main panel
 private const val STREAM_PANEL_OFFSET_X = -1450   // stream panels arc to the left of main
 private const val BOOKMARK_PANEL_OFFSET_X = 980   // bookmark panels arc to the right of main
 private const val BOOKMARK_GRID_COL_SPACING = 520 // flat-grid column pitch
@@ -102,10 +114,6 @@ fun SpatialWorkspace(
     onRemoveHost: (String) -> Unit = {},
     onSelectHost: (String) -> Unit = {},
     onUpdateAutoReconnect: (Boolean) -> Unit = {},
-    onToggleDiscovery: () -> Unit = {},
-    onStartDiscovery: () -> Unit = {},
-    onStopDiscovery: () -> Unit = {},
-    onSelectDiscoveredHost: (DiscoveredHost) -> Unit = {},
     onUpdateStreamSettings: (StreamSettings) -> Unit = {},
     onUpdateAudioSettings: (AudioSettings) -> Unit = {},
     onUpdateMacAddress: (String) -> Unit = {},
@@ -280,31 +288,6 @@ fun SpatialWorkspace(
             }
         }
 
-        // Discovery popup — separate SpatialPanel floating in front
-        if (uiState.showDiscovery) {
-            SpatialPanel(
-                modifier = SubspaceModifier
-                    .width(600.dp)
-                    .height(450.dp)
-                    .offset(z = 100.dp),
-                dragPolicy = MovePolicy(isEnabled = true),
-            ) {
-                DiscoveryPanel(
-                    discoveredHosts = uiState.discoveredHosts,
-                    isScanning = uiState.isScanning,
-                    discoveryError = uiState.discoveryError,
-                    onSelectHost = onSelectDiscoveredHost,
-                    onStartScan = onStartDiscovery,
-                    onStopScan = onStopDiscovery,
-                    onRefresh = {
-                        onStopDiscovery()
-                        onStartDiscovery()
-                    },
-                    onDismiss = onToggleDiscovery,
-                )
-            }
-        }
-
         // App selector popup — separate SpatialPanel floating in front
         if (uiState.showAppSelector) {
             SpatialPanel(
@@ -372,8 +355,8 @@ fun SpatialWorkspace(
         // and feel like a single workspace. The video panel sits at top, toolbar at bottom.
         // The user drags the column as a unit (movable on the column modifier), or grabs
         // the video panel directly (which has its own MovePolicy).
-        var mainPanelWidthDp by remember { mutableFloatStateOf(1400f) }
-        var mainPanelHeightDp by remember { mutableFloatStateOf(900f) }
+        var mainPanelWidthDp by remember { mutableFloatStateOf(MAIN_PANEL_WIDTH_DP) }
+        var mainPanelHeightDp by remember { mutableFloatStateOf(MAIN_PANEL_HEIGHT_DP) }
         // Shared surface state — StreamVideoSurface creates it, NativeStreamPanel uses it
         var mainSurfaceRef by remember { mutableStateOf<android.view.Surface?>(null) }
         // StreamVideoSurface — rendered OUTSIDE the SpatialColumn so it doesn't take a
@@ -384,21 +367,20 @@ fun SpatialWorkspace(
         // visible content in that slot.
         if (uiState.showDesktopPanel && useNativeStreaming.value) {
             StreamVideoSurface(
-                streamManager = null,
                 streamServiceConnection = null,
                 isConnected = uiState.isStreaming,
                 panelWidthDp = mainPanelWidthDp,
                 panelHeightDp = mainPanelHeightDp,
-                // Align with the main UI panel slot inside SpatialColumn.
-                // Column = [mainPanel(900) + toolbar(140)] = 1040dp centered at y=0.
-                // Main panel center sits at y = +70 (toolbar takes 140 below).
-                offsetYDp = 70f,
+                // Align with the main UI panel slot inside SpatialColumn — see VIDEO_PANEL_Y_OFFSET_DP.
+                offsetYDp = VIDEO_PANEL_Y_OFFSET_DP,
+                streamWidth = uiState.streamSettings.resolution.width,
+                streamHeight = uiState.streamSettings.resolution.height,
                 onSurfaceCreated = { surface ->
-                    Log.i("SpatialWorkspace", "Video surface created")
+                    Log.d("SpatialWorkspace", "Video surface created")
                     mainSurfaceRef = surface
                 },
                 onSurfaceDestroyed = {
-                    Log.i("SpatialWorkspace", "Video surface destroyed")
+                    Log.d("SpatialWorkspace", "Video surface destroyed")
                     mainSurfaceRef = null
                 },
             )
@@ -418,8 +400,8 @@ fun SpatialWorkspace(
             if (!uiState.isStreaming) {
                 SpatialPanel(
                     modifier = SubspaceModifier
-                        .width(1400.dp)
-                        .height(900.dp),
+                        .width(MAIN_PANEL_WIDTH_DP.dp)
+                        .height(MAIN_PANEL_HEIGHT_DP.dp),
                     dragPolicy = MovePolicy(isEnabled = false),
                     resizePolicy = ResizePolicy(isEnabled = true),
                 ) {
@@ -463,8 +445,8 @@ fun SpatialWorkspace(
                 // stays anchored below the video panel area instead of centering at y=0.
                 SpatialSpacer(
                     modifier = SubspaceModifier
-                        .width(1400.dp)
-                        .height(900.dp),
+                        .width(MAIN_PANEL_WIDTH_DP.dp)
+                        .height(MAIN_PANEL_HEIGHT_DP.dp),
                 )
             }
 
@@ -472,8 +454,8 @@ fun SpatialWorkspace(
             // grab/drag border. The actual WorkspaceToolbar Surface is centered inside.
             SpatialPanel(
                 modifier = SubspaceModifier
-                    .width(900.dp)
-                    .height(140.dp),
+                    .width(TOOLBAR_PANEL_WIDTH_DP.dp)
+                    .height(TOOLBAR_PANEL_HEIGHT_DP.dp),
                 dragPolicy = MovePolicy(isEnabled = true),
                 resizePolicy = ResizePolicy(isEnabled = false),
             ) {
@@ -548,7 +530,11 @@ fun SpatialWorkspace(
         // it depends on a sibling StreamVideoSurface to provide one).
         val activeStreamHosts = uiState.hostConfigs.filter { it.id in uiState.activeStreamHostIds }
         // Per-host surface state, keyed by host.id so each multi-stream panel gets its own.
-        val multiStreamSurfaces = remember { mutableStateMapOf<String, android.view.Surface?>() }
+        // Re-keyed on the activeStreamHostIds set so the map is rebuilt (and stale Surface
+        // references are released for GC) whenever a host is added or removed.
+        val multiStreamSurfaces = remember(uiState.activeStreamHostIds) {
+            mutableStateMapOf<String, android.view.Surface?>()
+        }
         if (activeStreamHosts.isNotEmpty()) {
             // Each stream panel needs its own StreamController for toolbar integration.
             // Key on the stable Set reference, not a newly-allocated List, to avoid
@@ -560,19 +546,21 @@ fun SpatialWorkspace(
             // Render a StreamVideoSurface for each active host so each gets its own Surface.
             // These sit at the same position as the NativeStreamPanel below for visual overlay.
             activeStreamHosts.forEach { host ->
+                val hostStreamSettings = host.qualityProfile ?: uiState.streamSettings
                 StreamVideoSurface(
-                    streamManager = null,
                     streamServiceConnection = onGetStreamSlot(host.id),
                     isConnected = true,  // assume connected for IPC path
-                    panelWidthDp = if (activeStreamHosts.size == 1) 1400f else 1200f,
-                    panelHeightDp = if (activeStreamHosts.size == 1) 900f else 750f,
-                    offsetYDp = 70f,
+                    panelWidthDp = if (activeStreamHosts.size == 1) MAIN_PANEL_WIDTH_DP else MULTI_STREAM_PANEL_WIDTH_DP,
+                    panelHeightDp = if (activeStreamHosts.size == 1) MAIN_PANEL_HEIGHT_DP else MULTI_STREAM_PANEL_HEIGHT_DP,
+                    offsetYDp = VIDEO_PANEL_Y_OFFSET_DP,
+                    streamWidth = hostStreamSettings.resolution.width,
+                    streamHeight = hostStreamSettings.resolution.height,
                     onSurfaceCreated = { surface ->
-                        Log.i("SpatialWorkspace", "Multi-stream surface created for ${host.id}")
+                        Log.d("SpatialWorkspace", "Multi-stream surface created for ${host.id}")
                         multiStreamSurfaces[host.id] = surface
                     },
                     onSurfaceDestroyed = {
-                        Log.i("SpatialWorkspace", "Multi-stream surface destroyed for ${host.id}")
+                        Log.d("SpatialWorkspace", "Multi-stream surface destroyed for ${host.id}")
                         multiStreamSurfaces[host.id] = null
                     },
                 )
@@ -582,12 +570,12 @@ fun SpatialWorkspace(
                 // Single stream: flat offset to left of main panel
                 val host = activeStreamHosts.first()
                 val hostController = streamPanelControllers[host.id] ?: StreamController()
-                var streamPanelWidthDp by remember { mutableFloatStateOf(1400f) }
-                var streamPanelHeightDp by remember { mutableFloatStateOf(900f) }
+                var streamPanelWidthDp by remember { mutableFloatStateOf(MAIN_PANEL_WIDTH_DP) }
+                var streamPanelHeightDp by remember { mutableFloatStateOf(MAIN_PANEL_HEIGHT_DP) }
                 SpatialPanel(
                     modifier = SubspaceModifier
-                        .width(1400.dp)
-                        .height(900.dp)
+                        .width(MAIN_PANEL_WIDTH_DP.dp)
+                        .height(MAIN_PANEL_HEIGHT_DP.dp)
                         .offset(x = STREAM_PANEL_OFFSET_X.dp),
                     dragPolicy = MovePolicy(isEnabled = true),
                     resizePolicy = ResizePolicy(isEnabled = true),
@@ -613,12 +601,12 @@ fun SpatialWorkspace(
                 ) {
                     activeStreamHosts.forEach { host ->
                         val hostController = streamPanelControllers[host.id] ?: StreamController()
-                        var arcPanelWidthDp by remember(host.id) { mutableFloatStateOf(1200f) }
-                        var arcPanelHeightDp by remember(host.id) { mutableFloatStateOf(750f) }
+                        var arcPanelWidthDp by remember(host.id) { mutableFloatStateOf(MULTI_STREAM_PANEL_WIDTH_DP) }
+                        var arcPanelHeightDp by remember(host.id) { mutableFloatStateOf(MULTI_STREAM_PANEL_HEIGHT_DP) }
                         SpatialPanel(
                             modifier = SubspaceModifier
-                                .width(1200.dp)
-                                .height(750.dp),
+                                .width(MULTI_STREAM_PANEL_WIDTH_DP.dp)
+                                .height(MULTI_STREAM_PANEL_HEIGHT_DP.dp),
                             dragPolicy = MovePolicy(isEnabled = true),
                             resizePolicy = ResizePolicy(isEnabled = true),
                         ) {

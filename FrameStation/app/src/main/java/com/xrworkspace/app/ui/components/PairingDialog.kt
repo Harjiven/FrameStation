@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.WifiFind
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -71,7 +70,6 @@ fun PairingPanel(
     onConnect: (String) -> Unit,
     onAddressChanged: (String) -> Unit,
     onDismiss: () -> Unit,
-    onScanNetwork: (() -> Unit)? = null,
     /** Called with the paired server's IP when pairing succeeds. ViewModel uses this
      *  to find the matching HostConfig by address and flip its isPaired flag. */
     onPairingSuccess: (String) -> Unit = {},

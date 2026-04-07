@@ -102,13 +102,21 @@ class StreamServiceConnection(
 
     private var binderRef: IBinder? = null  // held so we can unlinkToDeath on unbind
 
-    private val deathRecipient = IBinder.DeathRecipient {
-        Log.e(TAG, "StreamService process $processName died unexpectedly")
-        synchronized(this@StreamServiceConnection) {
-            service = null
-            _isBound = false
+    // Forward declaration so the lambda can reference itself when unlinking.
+    private lateinit var deathRecipient: IBinder.DeathRecipient
+    init {
+        deathRecipient = IBinder.DeathRecipient {
+            Log.e(TAG, "StreamService process $processName died unexpectedly")
+            // Unlink the death recipient FIRST so the same instance isn't fired twice
+            // (e.g., if the app rebinds and the same binder gets a second crash event).
+            synchronized(this@StreamServiceConnection) {
+                try { binderRef?.unlinkToDeath(deathRecipient, 0) } catch (_: Exception) {}
+                service = null
+                binderRef = null
+                _isBound = false
+            }
+            onServiceDied?.invoke()
         }
-        onServiceDied?.invoke()
     }
 
     // --- Lifecycle ---
@@ -120,23 +128,25 @@ class StreamServiceConnection(
     }
 
     fun unbind() {
-        if (_isBound) {
-            try {
-                service?.unregisterClient(clientCallback)
-                // Unlink death recipient before unbinding to prevent stale callbacks
-                binderRef?.let {
-                    try { it.unlinkToDeath(deathRecipient, 0) } catch (_: Exception) {}
-                }
-                context.unbindService(serviceConnection)
-            } catch (e: Exception) {
-                Log.w(TAG, "Error unbinding from $processName", e)
-            } finally {
-                synchronized(this) {
-                    service = null
-                    binderRef = null
-                    _isBound = false
-                }
+        // Snapshot fields under the lock and clear them in one atomic step. This avoids a
+        // race where deathRecipient nulls `service` between our null-check and our use of it.
+        val (svcSnapshot, binderSnapshot) = synchronized(this) {
+            if (!_isBound) return
+            val s = service
+            val b = binderRef
+            service = null
+            binderRef = null
+            _isBound = false
+            s to b
+        }
+        try {
+            svcSnapshot?.unregisterClient(clientCallback)
+            binderSnapshot?.let {
+                try { it.unlinkToDeath(deathRecipient, 0) } catch (_: Exception) {}
             }
+            context.unbindService(serviceConnection)
+        } catch (e: Exception) {
+            Log.w(TAG, "Error unbinding from $processName", e)
         }
     }
 

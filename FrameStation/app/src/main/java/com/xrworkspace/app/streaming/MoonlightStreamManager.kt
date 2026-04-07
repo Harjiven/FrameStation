@@ -41,6 +41,33 @@ class MoonlightStreamManager(
         private const val TAG = "FrameStation-Stream"
         private const val HTTP_PORT = 47989    // GameStream HTTP control port
         private const val HTTPS_PORT = 47984   // GameStream HTTPS control port
+
+        /**
+         * Process-wide cache of the AV1 hardware decoder probe.
+         * The result is constant for the lifetime of the process — codec lists don't change
+         * at runtime — so we compute it once on first access and reuse it for every stream.
+         * Probing MediaCodecList iterates ~50 codecs and takes 50–200ms on some devices.
+         */
+        private val hasHardwareAv1Decoder: Boolean by lazy {
+            try {
+                val list = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+                list.codecInfos.any { codec ->
+                    if (codec.isEncoder) return@any false
+                    if (!codec.supportedTypes.any { it.equals("video/av01", ignoreCase = true) }) return@any false
+                    // Reject software/Google AV1 decoder — won't perform at real-time framerates
+                    if (codec.name.contains("software", ignoreCase = true)) return@any false
+                    if (codec.name.startsWith("c2.android.", ignoreCase = true)) return@any false
+                    if (codec.name.startsWith("OMX.google.", ignoreCase = true)) return@any false
+                    // API 29+: explicitly check hardware acceleration
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !codec.isHardwareAccelerated) return@any false
+                    Log.i(TAG, "Found hardware AV1 decoder: ${codec.name}")
+                    true
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to probe MediaCodecList for AV1", e)
+                false
+            }
+        }
     }
 
     // applicationContext is a process singleton — strong reference is safe here.
@@ -184,8 +211,8 @@ class MoonlightStreamManager(
                     // remove its FORCE_AV1-only gate, so AUTO mode can now actually use AV1
                     // when the decoder is whitelisted or beats HEVC on performance points.
                     val av1Supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                        hasAv1Decoder()
-                    Log.i(TAG, "Codec config: streamCodec=$streamCodec av1Supported=$av1Supported sdk=${Build.VERSION.SDK_INT}")
+                        hasHardwareAv1Decoder
+                    Log.d(TAG, "Codec config: streamCodec=$streamCodec av1Supported=$av1Supported sdk=${Build.VERSION.SDK_INT}")
                     var videoFormats = when (streamCodec) {
                         VideoCodec.AUTO -> {
                             var mask = MoonBridge.VIDEO_FORMAT_H264 or MoonBridge.VIDEO_FORMAT_H265
@@ -215,7 +242,7 @@ class MoonlightStreamManager(
                     } else {
                         videoFormats
                     }
-                    Log.i(TAG, "videoFormats=0x${finalVideoFormats.toString(16)} (H264=0x1 H265=0x100 H265_M10=0x200 AV1=0x1000 AV1_M10=0x2000)")
+                    Log.d(TAG, "videoFormats=0x${finalVideoFormats.toString(16)} (H264=0x1 H265=0x100 H265_M10=0x200 AV1=0x1000 AV1_M10=0x2000)")
 
                     // Resolve audio configuration from user settings
                     val audioConfig = audioSettings.audioChannels.toMoonBridgeConfig()
@@ -433,27 +460,6 @@ class MoonlightStreamManager(
      * keep up with real-time streaming). We require an explicitly hardware-accelerated
      * decoder per `isHardwareAccelerated()` (API 29+).
      */
-    private fun hasAv1Decoder(): Boolean {
-        return try {
-            val list = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
-            list.codecInfos.any { codec ->
-                if (codec.isEncoder) return@any false
-                if (!codec.supportedTypes.any { it.equals("video/av01", ignoreCase = true) }) return@any false
-                // Reject software/Google AV1 decoder — won't perform at real-time framerates
-                if (codec.name.contains("software", ignoreCase = true)) return@any false
-                if (codec.name.startsWith("c2.android.", ignoreCase = true)) return@any false
-                if (codec.name.startsWith("OMX.google.", ignoreCase = true)) return@any false
-                // API 29+: explicitly check hardware acceleration
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !codec.isHardwareAccelerated) return@any false
-                Log.i(TAG, "Found hardware AV1 decoder: ${codec.name}")
-                true
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to probe MediaCodecList for AV1", e)
-            false
-        }
-    }
-
     /**
      * Returns true if [address] is a private/LAN IPv4 address (RFC 1918) or localhost.
      * Used to choose STREAM_CFG_LOCAL vs STREAM_CFG_REMOTE for the streaming config,

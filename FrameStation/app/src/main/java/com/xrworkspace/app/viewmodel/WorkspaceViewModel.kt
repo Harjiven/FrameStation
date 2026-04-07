@@ -72,7 +72,6 @@ data class WorkspaceUiState(
     val showHostManager: Boolean = false,
     val discoveredHosts: List<DiscoveredHost> = emptyList(),
     val isScanning: Boolean = false,
-    val showDiscovery: Boolean = false,
     val discoveryError: String? = null,
     val availableApps: List<ServerApp> = emptyList(),
     val selectedApp: ServerApp? = null,
@@ -216,8 +215,8 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 discoveryManager.startDiscovery()
                 delay(10_000L)
-                // Only stop if the user hasn't opened the discovery panel
-                if (!_uiState.value.showDiscovery) {
+                // Only stop if the user hasn't opened the Connect (pairing) panel
+                if (!_uiState.value.showPairing) {
                     discoveryManager.stopDiscovery()
                 }
             } catch (e: Exception) {
@@ -322,23 +321,40 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      * Returns a [WorkspaceUiState] with all popup menu panels closed.
      * Used by every `toggle*` panel function so opening one menu auto-closes any other.
      * Does NOT touch `showDesktopPanel` (that's the main streaming panel, not a popup).
+     *
+     * NOTE: This is pure state. Callers should also call [stopPanelSideEffects] to release
+     * resources owned by panels that are being closed (e.g., mDNS discovery).
      */
     private fun WorkspaceUiState.withAllPanelsClosed(): WorkspaceUiState = copy(
         showPairing = false,
         showBookmarkManager = false,
         showHostManager = false,
-        showDiscovery = false,
         showAppSelector = false,
         showMonitorPicker = false,
         showLayoutPresets = false,
     )
 
+    /**
+     * Stop side effects (mDNS discovery, etc.) owned by panels that are about to close.
+     * Called from every `toggle*` function and from [closeAllPanels] before opening a new panel.
+     */
+    private fun stopPanelSideEffectsBeforeClose() {
+        val state = _uiState.value
+        if (state.showPairing) {
+            try { discoveryManager.stopDiscovery() } catch (e: Exception) {
+                Log.w(TAG, "stopDiscovery failed during panel close", e)
+            }
+        }
+    }
+
     /** Public method for callers (e.g. Settings dialog) to close all panels. */
     fun closeAllPanels() {
+        stopPanelSideEffectsBeforeClose()
         _uiState.update { it.withAllPanelsClosed() }
     }
 
     fun toggleBookmarkManager() {
+        stopPanelSideEffectsBeforeClose()
         _uiState.update {
             val newValue = !it.showBookmarkManager
             it.withAllPanelsClosed().copy(showBookmarkManager = newValue)
@@ -366,7 +382,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      * both name and address (the user can rename it later in the Host Manager).
      */
     fun markHostPaired(address: String) {
-        Log.i(TAG, "markHostPaired: $address")
+        Log.d(TAG, "markHostPaired: $address")
         val existing = _uiState.value.hostConfigs.find { it.address == address }
         if (existing != null) {
             if (existing.isPaired) return  // already marked
@@ -379,7 +395,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         // No existing host — auto-create one and mark it paired in a single step
-        Log.i(TAG, "markHostPaired: auto-creating host config for $address")
+        Log.d(TAG, "markHostPaired: auto-creating host config for $address")
         val certFileName = hostConfigManager.certFileNameForHost(
             java.util.UUID.randomUUID().toString()
         )
@@ -407,19 +423,20 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun togglePairingDialog() {
-        _uiState.update {
-            val newValue = !it.showPairing
-            it.withAllPanelsClosed().copy(showPairing = newValue)
-        }
-        // Auto-start discovery when opening the unified Connect panel so the user
-        // immediately sees discovered hosts. Stop scanning when the panel closes.
-        if (_uiState.value.showPairing) {
-            try { discoveryManager.startDiscovery() } catch (e: Exception) {
-                Log.w(TAG, "Failed to start discovery from pairing dialog", e)
-            }
-        } else {
+        val willOpen = !_uiState.value.showPairing
+        // If we're closing (or were already showing), stop discovery (started by previous open).
+        // If we're opening, the start call below will (re)start it cleanly.
+        if (!willOpen || _uiState.value.showPairing) {
             try { discoveryManager.stopDiscovery() } catch (e: Exception) {
-                Log.w(TAG, "Failed to stop discovery from pairing dialog", e)
+                Log.w(TAG, "stopDiscovery failed in togglePairingDialog", e)
+            }
+        }
+        _uiState.update {
+            it.withAllPanelsClosed().copy(showPairing = willOpen)
+        }
+        if (willOpen) {
+            try { discoveryManager.startDiscovery() } catch (e: Exception) {
+                Log.w(TAG, "startDiscovery failed in togglePairingDialog", e)
             }
         }
     }
@@ -435,7 +452,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setStreamingState(streaming: Boolean) {
-        Log.i(TAG, "setStreamingState: $streaming")
+        Log.d(TAG, "setStreamingState: $streaming")
         _uiState.update { it.copy(isStreaming = streaming) }
     }
 
@@ -447,6 +464,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     // --- App selector ---
 
     fun toggleAppSelector() {
+        stopPanelSideEffectsBeforeClose()
         _uiState.update {
             val newValue = !it.showAppSelector
             it.withAllPanelsClosed().copy(showAppSelector = newValue)
@@ -502,38 +520,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // --- Network discovery ---
-
-    fun startDiscovery() {
-        discoveryManager.startDiscovery()
-    }
-
-    fun stopDiscovery() {
-        discoveryManager.stopDiscovery()
-    }
-
-    fun toggleDiscoveryPanel() {
-        val willShow = !_uiState.value.showDiscovery
-        _uiState.update { it.withAllPanelsClosed().copy(showDiscovery = willShow) }
-        if (willShow) {
-            discoveryManager.startDiscovery()
-        } else {
-            discoveryManager.stopDiscovery()
-        }
-    }
-
-    /**
-     * Select a discovered host — auto-fills the server address and opens the pairing panel.
-     */
-    fun selectDiscoveredHost(host: DiscoveredHost) {
-        updateServerAddress(host.address)
-        _uiState.update {
-            it.copy(
-                showDiscovery = false,
-                showPairing = true,
-            )
-        }
-        discoveryManager.stopDiscovery()
-    }
+    // mDNS discovery is owned by the unified Connect panel (togglePairingDialog).
+    // It auto-starts when the panel opens and stops when the panel closes (either via
+    // togglePairingDialog itself or via mutual exclusion from another toggle*() function
+    // through stopPanelSideEffectsBeforeClose).
 
     override fun onCleared() {
         super.onCleared()
@@ -550,6 +540,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     // --- Host config management ---
 
     fun toggleHostManager() {
+        stopPanelSideEffectsBeforeClose()
         _uiState.update {
             val newValue = !it.showHostManager
             it.withAllPanelsClosed().copy(showHostManager = newValue)
@@ -772,7 +763,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         val ids = _uiState.value.openBookmarkIds.filter { id ->
             _uiState.value.bookmarks.any { it.id == id && !it.isEphemeral }
         }.toSet()
-        Log.i("WorkspaceVM", "Auto-saving open bookmarks: $ids")
+        Log.d("WorkspaceVM", "Auto-saving open bookmarks: $ids")
         sharedPreferences.edit().putStringSet("open_bookmark_ids", ids).apply()
     }
 
@@ -783,6 +774,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
     private val sunshineApiManager = SunshineApiManager()
 
     fun toggleMonitorPicker() {
+        stopPanelSideEffectsBeforeClose()
         val showing = _uiState.value.showMonitorPicker
         _uiState.update { it.withAllPanelsClosed().copy(showMonitorPicker = !showing) }
         if (!showing) {
@@ -888,6 +880,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
      * Toggle the layout presets panel open/closed.
      */
     fun toggleLayoutPresets() {
+        stopPanelSideEffectsBeforeClose()
         _uiState.update {
             val newValue = !it.showLayoutPresets
             it.withAllPanelsClosed().copy(showLayoutPresets = newValue)
