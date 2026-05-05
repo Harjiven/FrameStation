@@ -55,42 +55,44 @@ class StreamSettingsTest {
 
     @Test
     fun `VideoCodec enum has correct labels`() {
-        assertEquals("Auto (H.264/H.265)", VideoCodec.AUTO.label)
+        assertEquals("Auto (best available)", VideoCodec.AUTO.label)
         assertEquals("H.264 only", VideoCodec.H264.label)
         assertEquals("H.265 only", VideoCodec.H265.label)
+        assertEquals("AV1 SDR (Android 10+)", VideoCodec.AV1_MAIN8.label)
+        assertEquals("AV1 10-bit (Android 10+)", VideoCodec.AV1_MAIN10.label)
     }
 
     @Test
-    fun `VideoCodec enum has exactly 3 entries`() {
-        assertEquals(3, VideoCodec.entries.size)
+    fun `VideoCodec enum has exactly 5 entries`() {
+        assertEquals(5, VideoCodec.entries.size)
     }
 
     @Test
     fun `recommendedBitrateKbps for 1080p at 60fps`() {
-        // 1920 * 1080 * 60 * 0.04 / 1000 = 4976
+        // 1920 * 1080 * 60 * 0.03 / 1000 = 3732 (AUTO assumes H.265 efficiency)
         val bitrate = recommendedBitrateKbps(Resolution.RES_1080P, 60)
-        assertEquals(4976, bitrate)
+        assertEquals(3732, bitrate)
     }
 
     @Test
     fun `recommendedBitrateKbps for 4K at 60fps`() {
-        // 3840 * 2160 * 60 * 0.04 / 1000 = 19906
+        // 3840 * 2160 * 60 * 0.03 / 1000 = 14929
         val bitrate = recommendedBitrateKbps(Resolution.RES_4K, 60)
-        assertEquals(19906, bitrate)
+        assertEquals(14929, bitrate)
     }
 
     @Test
     fun `recommendedBitrateKbps for 720p at 30fps`() {
-        // 1280 * 720 * 30 * 0.04 / 1000 = 1105
+        // 1280 * 720 * 30 * 0.03 / 1000 = 829 → clamped to minimum 1000
         val bitrate = recommendedBitrateKbps(Resolution.RES_720P, 30)
-        assertEquals(1105, bitrate)
+        assertEquals(1000, bitrate)
     }
 
     @Test
-    fun `recommendedBitrateKbps for 4K at 120fps is capped at 100000`() {
-        // 3840 * 2160 * 120 * 0.04 / 1000 = 39813 (under cap)
+    fun `recommendedBitrateKbps for 4K at 120fps`() {
+        // 3840 * 2160 * 120 * 0.03 / 1000 = 29859 (under 100000 cap)
         val bitrate = recommendedBitrateKbps(Resolution.RES_4K, 120)
-        assertEquals(39813, bitrate)
+        assertEquals(29859, bitrate)
     }
 
     @Test
