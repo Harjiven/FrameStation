@@ -169,7 +169,9 @@ open class StreamService : Service() {
     private fun broadcastStageChanged(stage: String) {
         val n = clients.beginBroadcast()
         for (i in 0 until n) {
-            try { clients.getBroadcastItem(i).onStageChanged(stage) } catch (_: Exception) {}
+            try { clients.getBroadcastItem(i).onStageChanged(stage) } catch (e: Exception) {
+                Log.w(TAG, "broadcastStageChanged: client callback failed (client likely died)", e)
+            }
         }
         clients.finishBroadcast()
     }
@@ -177,7 +179,9 @@ open class StreamService : Service() {
     private fun broadcastConnectionStarted() {
         val n = clients.beginBroadcast()
         for (i in 0 until n) {
-            try { clients.getBroadcastItem(i).onConnectionStarted() } catch (_: Exception) {}
+            try { clients.getBroadcastItem(i).onConnectionStarted() } catch (e: Exception) {
+                Log.w(TAG, "broadcastConnectionStarted: client callback failed (client likely died)", e)
+            }
         }
         clients.finishBroadcast()
     }
@@ -185,7 +189,9 @@ open class StreamService : Service() {
     private fun broadcastConnectionTerminated(reason: String?) {
         val n = clients.beginBroadcast()
         for (i in 0 until n) {
-            try { clients.getBroadcastItem(i).onConnectionTerminated(reason ?: "") } catch (_: Exception) {}
+            try { clients.getBroadcastItem(i).onConnectionTerminated(reason ?: "") } catch (e: Exception) {
+                Log.w(TAG, "broadcastConnectionTerminated: client callback failed (client likely died)", e)
+            }
         }
         clients.finishBroadcast()
     }
