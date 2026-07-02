@@ -9,8 +9,8 @@ name: build
 # Gradle/JDK/SDK provisioning, tune the setup steps here — that is what this file is for.
 
 on:
+  # Run on every branch push so feature/hardening branches are verified before merge.
   push:
-    branches: [ main, master ]
   pull_request:
 
 concurrency:
