@@ -271,7 +271,10 @@ fun BookmarkWebViewPanel(
                         javaScriptEnabled = true
                         domStorageEnabled = true
                         mediaPlaybackRequiresUserGesture = false
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        // COMPATIBILITY_MODE (not ALWAYS_ALLOW): keeps mixed-content sites like
+                        // Plex working while still blocking active mixed content on HTTPS pages —
+                        // ALWAYS_ALLOW is laxer than any real browser and draws Play security review.
+                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         @Suppress("DEPRECATION")
                         databaseEnabled = true
                         allowContentAccess = true

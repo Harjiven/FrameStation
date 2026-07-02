@@ -39,7 +39,7 @@ fun DesktopStreamPanel(streamUrl: String) {
                     javaScriptEnabled = true
                     domStorageEnabled = true
                     mediaPlaybackRequiresUserGesture = false
-                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                     allowContentAccess = true
                     @Suppress("DEPRECATION")
                     databaseEnabled = true
