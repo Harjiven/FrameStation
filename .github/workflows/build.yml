@@ -1,0 +1,83 @@
+name: build
+
+# Verification harness for FrameStation.
+# The Gradle project lives in the FrameStation/ subdirectory of the repo root.
+# The moonlight-android git submodule is NOT required to build (moonlight-core is
+# vendored in-tree), so we intentionally do not fetch submodules — it keeps CI fast.
+#
+# NOTE: AGP 9.0.0 / Kotlin 2.3.0 are bleeding-edge; if the first run fails on
+# Gradle/JDK/SDK provisioning, tune the setup steps here — that is what this file is for.
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: assemble + unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: FrameStation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Assemble debug + run unit tests
+        run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: FrameStation/app/build/reports/tests/
+          if-no-files-found: ignore
+
+  lint:
+    name: android lint (non-blocking)
+    runs-on: ubuntu-latest
+    # Pre-existing lint findings must not block the pipeline yet.
+    # Task 2.4 flips this to blocking once the codebase is clean.
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: FrameStation
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - run: chmod +x gradlew
+      - run: ./gradlew --no-daemon --stacktrace lint
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: FrameStation/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
