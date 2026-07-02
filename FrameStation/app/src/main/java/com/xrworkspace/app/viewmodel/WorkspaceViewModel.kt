@@ -24,7 +24,9 @@ import com.xrworkspace.app.model.WorkspaceLayout
 import com.xrworkspace.app.model.WorkspaceLayoutManager
 import com.xrworkspace.app.streaming.DiscoveredHost
 import com.xrworkspace.app.streaming.DiscoveryManager
+import com.xrworkspace.app.streaming.MainStreamSession
 import com.xrworkspace.app.streaming.ServerManager
+import com.xrworkspace.app.streaming.StreamSessionState
 import com.xrworkspace.app.streaming.StreamService0
 import com.xrworkspace.app.streaming.StreamService1
 import com.xrworkspace.app.streaming.StreamService2
@@ -61,6 +63,8 @@ data class WorkspaceUiState(
     val isPaired: Boolean = false,
     val showPairing: Boolean = false,
     val isStreaming: Boolean = false,
+    /** Main desktop panel stream lifecycle state (owned by MainStreamSession). */
+    val mainStream: StreamSessionState = StreamSessionState(),
     val bookmarks: List<Bookmark> = emptyList(),
     val openBookmarkIds: Set<String> = emptySet(),
     val showBookmarkManager: Boolean = false,
@@ -110,6 +114,17 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val discoveryManager = DiscoveryManager(application)
     private val wolManager = WolManager()
+
+    /**
+     * Owns the main desktop panel's stream outside the composition so toolbar controls
+     * (Stop/Mute/Keyboard) survive the panel leaving composition when streaming starts.
+     */
+    private val mainStreamSession = MainStreamSession(
+        context = application,
+        prefs = sharedPreferences,
+        scope = viewModelScope,
+        onStreamingChanged = { streaming -> setStreamingState(streaming) },
+    )
 
     // --- Process-isolated stream service slots ---
     // Each slot runs in its own Android process (:stream0, :stream1, :stream2), giving each
@@ -210,6 +225,15 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
+        // Mirror the main stream session's lifecycle state into UI state.
+        viewModelScope.launch {
+            try {
+                mainStreamSession.state.collect { s -> _uiState.update { it.copy(mainStream = s) } }
+            } catch (e: Exception) {
+                Log.e(TAG, "mainStream state collector failed", e)
+            }
+        }
+
         // Auto-start discovery briefly on launch (10 seconds) to populate host list.
         viewModelScope.launch {
             try {
@@ -247,13 +271,50 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     val uiState: StateFlow<WorkspaceUiState> = _uiState.asStateFlow()
 
-    fun toggleDesktopPanel() = _uiState.update {
-        if (it.showDesktopPanel) {
-            it.copy(showDesktopPanel = false, isStreaming = false)
-        } else {
-            it.copy(showDesktopPanel = true)
+    fun toggleDesktopPanel() {
+        // If we're hiding the panel while a stream is active, actually stop the stream.
+        // (Fixes the A1 leak where isStreaming was flipped false without stopping the connection.)
+        if (_uiState.value.showDesktopPanel) {
+            mainStreamSession.onDesktopPanelHidden()
+        }
+        _uiState.update {
+            if (it.showDesktopPanel) {
+                it.copy(showDesktopPanel = false, isStreaming = false)
+            } else {
+                it.copy(showDesktopPanel = true)
+            }
         }
     }
+
+    // --- Main desktop panel stream (owned by MainStreamSession) ---
+
+    /** Provide the video Surface (from StreamVideoSurface) to the main stream session. */
+    fun setMainStreamSurface(surface: android.view.Surface?) = mainStreamSession.setSurface(surface)
+
+    /** Start the main desktop panel stream to the active host. */
+    fun startMainStream() {
+        val state = _uiState.value
+        val activeHost = state.hostConfigs.find { it.id == state.activeHostId }
+        mainStreamSession.configure(
+            serverAddress = state.serverAddress,
+            // Per-host cert wiring is Task 1.3; ServerManager still loads the legacy cert from disk.
+            serverCert = null,
+            appId = state.selectedApp?.appId,
+            streamSettings = activeHost?.qualityProfile ?: state.streamSettings,
+            audioSettings = state.audioSettings,
+            autoReconnectEnabled = state.autoReconnectEnabled,
+        )
+        mainStreamSession.start()
+    }
+
+    /** Stop the main desktop panel stream (toolbar Stop button). */
+    fun stopMainStream() = mainStreamSession.stop()
+
+    /** Toggle mute on the active main stream (toolbar mute chip). */
+    fun setMainStreamMuted(muted: Boolean) = mainStreamSession.setMuted(muted)
+
+    /** Send typed text to the main stream (typing bar). */
+    fun sendMainStreamText(text: String) = mainStreamSession.sendUtf8Text(text)
 
     fun toggleBookmark(id: String) {
         _uiState.update { state ->
@@ -527,6 +588,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         super.onCleared()
+        mainStreamSession.release()
         discoveryManager.stopDiscovery()
         // Stop all active streams and unbind service connections
         streamSlots.values.forEach { slot ->
